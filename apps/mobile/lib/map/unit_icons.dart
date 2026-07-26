@@ -5,6 +5,9 @@
 // résolu ici vers un asset. Ajouter une icône = déposer le PNG dans
 // `assets/icons/units/` + une entrée ici. Rien n'est codé en dur ailleurs.
 
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 enum UnitAffiliation {
   allied('allied', 'Allié'),
   hostile('hostile', 'Ennemi'),
@@ -58,4 +61,44 @@ class UnitIcons {
           for (final a in UnitAffiliation.values)
             if (exists(t, a)) iconId(t, a),
       ];
+
+  static final Map<String, Uint8List> _outlineCache = {};
+
+  /// PNG de l'icône posée sur un fond blanc arrondi : lisibilité sur fond
+  /// forêt (alliés) et mise en évidence de sa propre position (contour épais).
+  static Future<Uint8List> outlinedPng(
+    String iconId,
+    Uint8List src, {
+    required double border,
+  }) async {
+    final key = '$iconId/$border';
+    final cached = _outlineCache[key];
+    if (cached != null) return cached;
+
+    final codec = await ui.instantiateImageCodec(src);
+    final frame = await codec.getNextFrame();
+    final image = frame.image;
+    final width = image.width + border * 2;
+    final height = image.height + border * 2;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    canvas.drawRRect(
+      ui.RRect.fromRectAndRadius(
+        ui.Rect.fromLTWH(0, 0, width, height),
+        ui.Radius.circular(border * 2),
+      ),
+      ui.Paint()..color = const ui.Color(0xFFFFFFFF),
+    );
+    canvas.drawImage(image, ui.Offset(border, border), ui.Paint());
+    final rendered =
+        await recorder.endRecording().toImage(width.round(), height.round());
+    final data = await rendered.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    rendered.dispose();
+
+    final bytes = data!.buffer.asUint8List();
+    _outlineCache[key] = bytes;
+    return bytes;
+  }
 }

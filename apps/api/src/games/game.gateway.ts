@@ -3,8 +3,8 @@ import { OnEvent } from '@nestjs/event-emitter';
 import {
   ConnectedSocket,
   MessageBody,
-  OnGatewayConnection,
   OnGatewayDisconnect,
+  OnGatewayInit,
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
@@ -45,7 +45,7 @@ type GameSocket = Socket & { data: GameSocketData };
  *    ne retire jamais le membre — les autres le voient « hors ligne ».
  */
 @WebSocketGateway({ namespace: 'game', cors: { origin: '*' } })
-export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
   private readonly logger = new Logger(GameGateway.name);
 
   @WebSocketServer()
@@ -56,18 +56,25 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly gamesService: GamesService,
   ) {}
 
-  async handleConnection(client: GameSocket): Promise<void> {
-    const token = client.handshake.auth?.token as string | undefined;
-    if (!token) {
-      client.disconnect(true);
-      return;
-    }
-    try {
-      client.data.user = await this.tokens.verify(token);
-      client.data.memberships = new Map();
-    } catch {
-      client.disconnect(true);
-    }
+  /**
+   * Authentification en MIDDLEWARE : la connexion n'est établie qu'une fois
+   * le jeton vérifié. Aucun message ne peut donc arriver avant que
+   * `client.data.user` soit posé (pas de course au démarrage), et un socket
+   * sans jeton valide est refusé avec `connect_error`.
+   */
+  afterInit(server: Server): void {
+    server.use((socket, next) => {
+      const token = socket.handshake.auth?.token as string | undefined;
+      if (!token) return next(new Error('jeton manquant'));
+      this.tokens
+        .verify(token)
+        .then((user) => {
+          (socket as GameSocket).data.user = user;
+          (socket as GameSocket).data.memberships = new Map();
+          next();
+        })
+        .catch(() => next(new Error('jeton invalide')));
+    });
   }
 
   async handleDisconnect(client: GameSocket): Promise<void> {

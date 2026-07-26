@@ -100,6 +100,11 @@ await expect403(
   'insigne d’un capitaine par un joueur',
 );
 
+// Mais chacun choisit librement SON propre insigne
+const selfBadge = await api('PATCH', `/games/${game.id}/members/${p3.membershipId}`, t3, { unitType: 'radio' });
+if (selfBadge.unitType !== 'radio') throw new Error('insigne perso refusé');
+console.log('un joueur change son propre insigne → radio ✓');
+
 // Tri descendant : commandant, capitaine, joueur
 members = await api('GET', `/games/${game.id}/members`, t1);
 const roles = members.map((m) => m.role).join(' > ');

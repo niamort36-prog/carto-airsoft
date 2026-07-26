@@ -33,6 +33,22 @@ class _MapScreenState extends State<MapScreen> {
   static const _alliesSource = 'allies';
   static const _markersSource = 'markers';
   static const _markersLayer = 'markers-icons';
+  static const _selfSource = 'self';
+
+  /// Tailles d'icônes interpolées sur le zoom : toujours visibles de loin,
+  /// confortables de près.
+  static const _markerIconSize = [
+    'interpolate', ['linear'], ['zoom'],
+    8, 0.10, 12, 0.17, 16, 0.26,
+  ];
+  static const _allyIconSize = [
+    'interpolate', ['linear'], ['zoom'],
+    8, 0.10, 12, 0.18, 16, 0.30,
+  ];
+  static const _selfIconSize = [
+    'interpolate', ['linear'], ['zoom'],
+    8, 0.12, 12, 0.21, 16, 0.34,
+  ];
 
   MapLibreMapController? _controller;
   MapBasemap _basemap = MapBasemap.osm;
@@ -209,6 +225,7 @@ class _MapScreenState extends State<MapScreen> {
         (pos) {
           _lastPosition = pos;
           _realtime?.sendPosition(pos.latitude, pos.longitude);
+          _refreshAllies(); // met aussi à jour mon insigne sur la carte
         },
         onError: (_) {},
       );
@@ -225,6 +242,7 @@ class _MapScreenState extends State<MapScreen> {
       final pos = await Geolocator.getCurrentPosition();
       _lastPosition = pos;
       _realtime?.sendPosition(pos.latitude, pos.longitude);
+      _refreshAllies();
       await _controller?.animateCamera(
         CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 15),
       );
@@ -249,6 +267,10 @@ class _MapScreenState extends State<MapScreen> {
               children: [
                 Text('Alliés', style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 8),
+                if (_myMembershipId != null &&
+                    _members[_myMembershipId] != null)
+                  _myTile(_members[_myMembershipId]!),
+                const Divider(height: 8),
                 if (allies.isEmpty)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 16),
@@ -279,6 +301,41 @@ class _MapScreenState extends State<MapScreen> {
         LifeStatus.medicNeeded => const Color(0xFFF44336),
         LifeStatus.support => const Color(0xFF2196F3),
       };
+
+  /// Ma propre ligne : mon insigne, mon grade — et le bouton pour choisir
+  /// mon insigne (autorisé pour tous sur soi-même, validé serveur).
+  Widget _myTile(MemberView me) {
+    return ListTile(
+      dense: true,
+      leading: Image.asset(
+        UnitIcons.assetKey('${me.unitType}_allied'),
+        width: 36,
+        height: 36,
+        fit: BoxFit.contain,
+      ),
+      title: Text('${me.displayName} (moi)'),
+      subtitle: Text('${roleLabel(me.role)} · ${me.lifeStatus.label}'),
+      trailing: IconButton(
+        tooltip: 'Choisir mon insigne',
+        icon: const Icon(Icons.edit),
+        onPressed: () async {
+          Navigator.pop(context);
+          final unitType = await _pickUnitType();
+          if (unitType == null) return;
+          try {
+            await GamesApi.updateMember(
+              widget.gameId!,
+              me.membershipId,
+              unitType: unitType.slug,
+            );
+            _showSnack('Mon insigne : ${unitType.label}');
+          } catch (e) {
+            _showSnack(e.toString(), isError: true);
+          }
+        },
+      ),
+    );
+  }
 
   /// Ligne d'un allié : insigne, grade, statut — et pour les gradés, les
   /// actions de commandement (le serveur revalide tout, §2.1).
@@ -439,10 +496,23 @@ class _MapScreenState extends State<MapScreen> {
     if (controller == null) return;
     try {
       // Pack d'icônes d'unités : enregistré dans le style (assets embarqués,
-      // donc disponible hors ligne, aucune police requise).
+      // donc disponible hors ligne, aucune police requise). Les insignes
+      // alliés reçoivent en plus deux variantes à contour blanc : `_outline`
+      // (lisibilité sur fond forêt) et `_self` (contour épais = moi).
       for (final iconId in UnitIcons.allIconIds) {
         final bytes = await rootBundle.load(UnitIcons.assetKey(iconId));
-        await controller.addImage(iconId, bytes.buffer.asUint8List());
+        final png = bytes.buffer.asUint8List();
+        await controller.addImage(iconId, png);
+        if (iconId.endsWith('_allied')) {
+          await controller.addImage(
+            '${iconId}_outline',
+            await UnitIcons.outlinedPng(iconId, png, border: 8),
+          );
+          await controller.addImage(
+            '${iconId}_self',
+            await UnitIcons.outlinedPng(iconId, png, border: 22),
+          );
+        }
       }
       await controller.addGeoJsonSource(_markersSource, _markersGeoJson());
       // Icône du marqueur + heure de pose en petit dessous (le style déclare
@@ -452,7 +522,7 @@ class _MapScreenState extends State<MapScreen> {
         _markersLayer,
         const SymbolLayerProperties(
           iconImage: ['get', 'icon'],
-          iconSize: 0.16,
+          iconSize: _markerIconSize,
           iconAllowOverlap: true,
           iconOpacity: ['get', 'opacity'],
           textField: ['get', 'time'],
@@ -468,29 +538,28 @@ class _MapScreenState extends State<MapScreen> {
           textOpacity: ['get', 'opacity'],
         ),
       );
-      // Alliés : insigne d'unité (bleu APP-6) + pastille de statut dessous.
+      // Alliés : insigne d'unité à contour blanc (statut → panneau Alliés).
       await controller.addGeoJsonSource(_alliesSource, _alliesGeoJson());
-      await controller.addCircleLayer(
-        _alliesSource,
-        'allies-status',
-        CircleLayerProperties(
-          circleRadius: 5,
-          circleColor: ['get', 'color'],
-          circleOpacity: ['get', 'opacity'],
-          circleStrokeWidth: 1.5,
-          circleStrokeColor: '#ffffff',
-          circleStrokeOpacity: ['get', 'opacity'],
-          circleTranslate: [0, 22],
-        ),
-      );
       await controller.addSymbolLayer(
         _alliesSource,
         'allies-icons',
         const SymbolLayerProperties(
           iconImage: ['get', 'icon'],
-          iconSize: 0.13,
+          iconSize: _allyIconSize,
           iconAllowOverlap: true,
           iconOpacity: ['get', 'opacity'],
+        ),
+      );
+      // Moi : mon insigne (au choix), contour blanc épais — remplace le
+      // point bleu en partie.
+      await controller.addGeoJsonSource(_selfSource, _selfGeoJson());
+      await controller.addSymbolLayer(
+        _selfSource,
+        'self-icon',
+        const SymbolLayerProperties(
+          iconImage: ['get', 'icon'],
+          iconSize: _selfIconSize,
+          iconAllowOverlap: true,
         ),
       );
       _styleReady = true;
@@ -548,9 +617,9 @@ class _MapScreenState extends State<MapScreen> {
         },
         'properties': {
           'name': m.displayName,
-          // Insigne d'unité (bleu allié) — défaut infanterie, command pour
-          // le commandant, modifiable par les gradés (§5).
-          'icon': '${m.unitType}_allied',
+          // Insigne d'unité (bleu allié, contour blanc) — défaut infanterie,
+          // command pour le commandant, modifiable par les gradés (§5).
+          'icon': '${m.unitType}_allied_outline',
           'color':
               '#${_statusColor(m.lifeStatus).toARGB32().toRadixString(16).substring(2)}',
           // Estompé quand hors ligne (§2.4) : visible, mais visiblement daté.
@@ -565,6 +634,29 @@ class _MapScreenState extends State<MapScreen> {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
     controller.setGeoJsonSource(_alliesSource, _alliesGeoJson());
+    controller.setGeoJsonSource(_selfSource, _selfGeoJson());
+  }
+
+  /// Ma propre position, rendue avec MON insigne (contour blanc épais).
+  Map<String, dynamic> _selfGeoJson() {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final pos = _lastPosition;
+    if (!_inGame || me == null || pos == null) {
+      return {'type': 'FeatureCollection', 'features': []};
+    }
+    return {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [pos.longitude, pos.latitude],
+          },
+          'properties': {'icon': '${me.unitType}_allied_self'},
+        },
+      ],
+    };
   }
 
   /// Appui long : pose d'un marqueur d'unité à l'endroit visé (§ Phase 2).
@@ -724,7 +816,9 @@ class _MapScreenState extends State<MapScreen> {
             MapLibreMap(
               styleString: _styleJson!,
               initialCameraPosition: _initialCamera,
-              myLocationEnabled: _locationGranted,
+              // En partie, ma position est rendue par MON insigne (couche
+              // self) — le point bleu natif ne sert qu'en carte libre.
+              myLocationEnabled: _locationGranted && !_inGame,
               onMapCreated: (c) {
                 _controller = c;
                 c.onFeatureTapped.add(_onFeatureTap);

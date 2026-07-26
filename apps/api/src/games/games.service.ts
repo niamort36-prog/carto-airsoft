@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AuthenticatedUser } from '../auth/supabase-auth.guard';
 import { DRIZZLE, type Database } from '../db/db.module';
 import {
@@ -81,7 +81,10 @@ export class GamesService {
           isNull(memberships.leftAt),
           isNull(memberships.kickedAt),
         ),
-      );
+      )
+      // Ordre stable (plus récentes d'abord) : sans ORDER BY, Postgres peut
+      // mélanger la liste d'un rafraîchissement à l'autre.
+      .orderBy(desc(games.createdAt));
   }
 
   /**
@@ -167,8 +170,8 @@ export class GamesService {
    * Gestion d'un membre par un gradé (§5, version jouable) :
    *  - nomination (capitaine / chef d'escouade / joueur) : commandant
    *    uniquement, jamais sur lui-même ni sur un autre commandant ;
-   *  - insigne (icône d'unité) : tout gradé sur un rang STRICTEMENT
-   *    inférieur au sien.
+   *  - insigne (icône d'unité) : soi-même librement, ou tout gradé sur
+   *    un rang STRICTEMENT inférieur au sien.
    * Validé serveur — le client n'émet qu'une intention (§2.1).
    */
   async updateMember(
@@ -206,9 +209,13 @@ export class GamesService {
         throw new ForbiddenException('Le commandant ne peut pas être rétrogradé');
       }
     }
-    if (dto.unitType != null && requesterRank >= targetRank) {
+    if (
+      dto.unitType != null &&
+      target.id !== requester.id &&
+      requesterRank >= targetRank
+    ) {
       throw new ForbiddenException(
-        'L’insigne ne se modifie que sur un rang inférieur au sien',
+        'L’insigne ne se modifie que sur soi ou sur un rang inférieur',
       );
     }
 

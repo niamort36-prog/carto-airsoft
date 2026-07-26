@@ -72,9 +72,10 @@ await fetch(`${API}/games/${game.id}/join`, {
 });
 console.log(`partie: ${game.id}`);
 
-// Un socket sans jeton doit être rejeté
+// Un socket sans jeton doit être refusé dès la poignée de main (middleware)
 const bad = io(WS, { auth: {}, transports: ['websocket'] });
 await new Promise((resolve) => {
+  bad.on('connect_error', () => { console.log('socket sans jeton: refusé ✓'); resolve(); });
   bad.on('disconnect', () => { console.log('socket sans jeton: déconnecté ✓'); resolve(); });
   setTimeout(resolve, 3000);
 });
