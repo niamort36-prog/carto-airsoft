@@ -42,6 +42,50 @@ enum LifeStatus {
       );
 }
 
+/// Objet tactique posé sur la carte (marqueur d'unité, waypoint…).
+class MapObjectView {
+  const MapObjectView({
+    required this.id,
+    required this.kind,
+    required this.markerType,
+    required this.lat,
+    required this.lng,
+    required this.properties,
+    required this.authorMembershipId,
+    required this.createdAt,
+    required this.deletedAt,
+  });
+
+  final String id;
+  final String kind;
+  final String markerType;
+  final double lat;
+  final double lng;
+  final Map<String, dynamic> properties;
+  final String authorMembershipId;
+  final DateTime createdAt;
+  final DateTime? deletedAt;
+
+  String? get icon => properties['icon'] as String?;
+  String? get label => properties['label'] as String?;
+  bool get isDeleted => deletedAt != null;
+
+  factory MapObjectView.fromJson(Map<String, dynamic> json) => MapObjectView(
+        id: json['id'] as String,
+        kind: json['kind'] as String,
+        markerType: json['markerType'] as String,
+        lat: (json['lat'] as num).toDouble(),
+        lng: (json['lng'] as num).toDouble(),
+        properties:
+            (json['properties'] as Map?)?.cast<String, dynamic>() ?? {},
+        authorMembershipId: json['authorMembershipId'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        deletedAt: json['deletedAt'] != null
+            ? DateTime.tryParse(json['deletedAt'] as String)
+            : null,
+      );
+}
+
 class MemberView {
   const MemberView({
     required this.membershipId,

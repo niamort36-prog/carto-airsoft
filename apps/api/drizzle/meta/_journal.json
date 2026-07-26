@@ -15,6 +15,13 @@
       "when": 1784736204946,
       "tag": "0001_nifty_clea",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785068968583,
+      "tag": "0002_fixed_wendell_rand",
+      "breakpoints": true
     }
   ]
 }

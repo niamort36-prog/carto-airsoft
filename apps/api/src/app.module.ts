@@ -5,6 +5,7 @@ import { EventEmitterModule } from '@nestjs/event-emitter';
 import { DbModule } from './db/db.module';
 import { GamesModule } from './games/games.module';
 import { HealthModule } from './health/health.module';
+import { MapObjectsModule } from './map-objects/map-objects.module';
 import { MapStylesModule } from './map-styles/map-styles.module';
 import { UsersModule } from './users/users.module';
 
@@ -20,6 +21,7 @@ import { UsersModule } from './users/users.module';
     DbModule,
     GamesModule,
     HealthModule,
+    MapObjectsModule,
     MapStylesModule,
     UsersModule,
   ],

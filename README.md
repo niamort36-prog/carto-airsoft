@@ -77,7 +77,14 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Jalon 4 : cache offline des tuiles — validé en mode avion (téléchargement de zone, redémarrage complet sans réseau)
   - [x] Jalon 5 : parties hébergées serveur (`games`, `memberships`) + rejoindre + statuts de vie
   - [x] Jalon 6 : temps réel Socket.IO — alliés sur la carte, statuts, « hors ligne » sans éjection (§2.4)
-- [ ] Phase 2 — Tactique de base (marqueurs, synchro offline, chat)
+- [ ] **Phase 2 — Tactique de base** *(en cours)*
+  - [x] Pack d'icônes d'unités intégré (13 types × 4 affiliations APP-6, fourni par le propriétaire)
+  - [x] Marqueurs tactiques : pose par appui long, rendu par icônes, temps réel, suppression (auteur/ORGA), serveur arbitre
+  - [x] Côté serveur §7.6 : id client (idempotence), delta `sync?since=`, tombstones — validé par E2E
+  - [ ] File offline locale des marqueurs (outbox Drift) + réconciliation à la reconnexion
+  - [ ] Dessin de zones et de lignes
+  - [ ] Messagerie intégrée (global/équipe/escouade)
+  - [ ] Service Android premier plan (GPS écran éteint)
 - [ ] Phase 3 — Parties & rôles (QR, permissions, console web)
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)

@@ -20,6 +20,13 @@ import {
   type MemberView,
 } from './games.service';
 
+/** Événement émis par MapObjectsService — importé « par contrat » (pas de
+ *  dépendance de module : la gateway ne fait que rediffuser). */
+import {
+  OBJECT_UPDATED_EVENT,
+  type ObjectUpdatedEvent,
+} from '../map-objects/map-objects.service';
+
 interface GameSocketData {
   user: AuthenticatedUser;
   /** gameId → membershipId, pour les parties rejointes par ce socket. */
@@ -155,5 +162,13 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     this.server
       .to(`game:${event.gameId}`)
       .emit('member:update', event.member);
+  }
+
+  /** Rediffuse tout changement d'objet carte (marqueur posé/modifié/supprimé). */
+  @OnEvent(OBJECT_UPDATED_EVENT)
+  onObjectUpdated(event: ObjectUpdatedEvent): void {
+    this.server
+      .to(`game:${event.gameId}`)
+      .emit('object:upsert', event.object);
   }
 }

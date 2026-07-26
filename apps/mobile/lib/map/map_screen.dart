@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:math' show Point;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:uuid/uuid.dart';
 
 import '../game/game_realtime.dart';
+import '../game/games_api.dart';
 import '../game/models.dart';
 import '../offline/offline_sheet.dart';
 import 'map_styles.dart';
+import 'unit_icons.dart';
+import 'unit_picker_sheet.dart';
 
 /// Écran carte. Sans [gameId] : carte libre (fonds + offline).
 /// Avec [gameId] : partie en cours — alliés en temps réel, statut de vie,
@@ -25,6 +30,8 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   static const _alliesSource = 'allies';
+  static const _markersSource = 'markers';
+  static const _markersLayer = 'markers-icons';
 
   MapLibreMapController? _controller;
   MapBasemap _basemap = MapBasemap.osm;
@@ -35,6 +42,7 @@ class _MapScreenState extends State<MapScreen> {
   GameRealtime? _realtime;
   bool _realtimeConnected = false;
   final Map<String, MemberView> _members = {};
+  final Map<String, MapObjectView> _objects = {};
   String? _myMembershipId;
   LifeStatus _myStatus = LifeStatus.alive;
   StreamSubscription<Position>? _positionSub;
@@ -59,11 +67,37 @@ class _MapScreenState extends State<MapScreen> {
         gameId: widget.gameId!,
         onSnapshot: _onSnapshot,
         onMemberUpdate: _onMemberUpdate,
+        onObjectUpsert: _onObjectUpsert,
         onConnectionChanged: (connected) {
           if (mounted) setState(() => _realtimeConnected = connected);
         },
       )..connect();
+      _loadObjects();
     }
+  }
+
+  /// Chargement initial des marqueurs de la partie (le flux WebSocket prend
+  /// le relais ensuite). La file offline locale (§7.6) viendra avec Drift.
+  Future<void> _loadObjects() async {
+    try {
+      final res = await GamesApi.syncObjects(widget.gameId!);
+      if (!mounted) return;
+      for (final o in res.objects) {
+        _onObjectUpsert(o, refresh: false);
+      }
+      _refreshMarkers();
+    } catch (_) {
+      // Hors ligne : les marqueurs arriveront à la reconnexion.
+    }
+  }
+
+  void _onObjectUpsert(MapObjectView object, {bool refresh = true}) {
+    if (object.isDeleted) {
+      _objects.remove(object.id);
+    } else {
+      _objects[object.id] = object;
+    }
+    if (refresh) _refreshMarkers();
   }
 
   @override
@@ -260,6 +294,22 @@ class _MapScreenState extends State<MapScreen> {
     final controller = _controller;
     if (controller == null) return;
     try {
+      // Pack d'icônes d'unités : enregistré dans le style (assets embarqués,
+      // donc disponible hors ligne, aucune police requise).
+      for (final iconId in UnitIcons.allIconIds) {
+        final bytes = await rootBundle.load(UnitIcons.assetKey(iconId));
+        await controller.addImage(iconId, bytes.buffer.asUint8List());
+      }
+      await controller.addGeoJsonSource(_markersSource, _markersGeoJson());
+      await controller.addSymbolLayer(
+        _markersSource,
+        _markersLayer,
+        const SymbolLayerProperties(
+          iconImage: ['get', 'icon'],
+          iconSize: 0.16,
+          iconAllowOverlap: true,
+        ),
+      );
       await controller.addGeoJsonSource(_alliesSource, _alliesGeoJson());
       await controller.addCircleLayer(
         _alliesSource,
@@ -275,9 +325,34 @@ class _MapScreenState extends State<MapScreen> {
       );
       _styleReady = true;
       _refreshAllies();
+      _refreshMarkers();
     } catch (e) {
-      debugPrint('couche alliés indisponible: $e');
+      debugPrint('couches carte indisponibles: $e');
     }
+  }
+
+  Map<String, dynamic> _markersGeoJson() => {
+        'type': 'FeatureCollection',
+        'features': [
+          for (final o in _objects.values)
+            {
+              'type': 'Feature',
+              'id': o.id,
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [o.lng, o.lat],
+              },
+              'properties': {
+                'icon': o.icon ?? 'infantry_unknown',
+              },
+            },
+        ],
+      };
+
+  void _refreshMarkers() {
+    final controller = _controller;
+    if (controller == null || !_styleReady) return;
+    controller.setGeoJsonSource(_markersSource, _markersGeoJson());
   }
 
   Map<String, dynamic> _alliesGeoJson() {
@@ -307,6 +382,137 @@ class _MapScreenState extends State<MapScreen> {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
     controller.setGeoJsonSource(_alliesSource, _alliesGeoJson());
+  }
+
+  /// Appui long : pose d'un marqueur d'unité à l'endroit visé (§ Phase 2).
+  Future<void> _onMapLongClick(Point<double> point, LatLng latLng) async {
+    if (!_inGame) return;
+    final choice = await showModalBottomSheet<UnitChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const UnitPickerSheet(),
+    );
+    if (choice == null || !mounted) return;
+
+    final object = MapObjectView(
+      // UUID v7 côté client (§7.6) : idempotent à la resynchronisation.
+      id: const Uuid().v7(),
+      kind: 'marker',
+      markerType: 'unit',
+      lat: latLng.latitude,
+      lng: latLng.longitude,
+      properties: {
+        'icon': UnitIcons.iconId(choice.type, choice.affiliation),
+        'unitLabel': '${choice.type.label} — ${choice.affiliation.label}',
+      },
+      authorMembershipId: _myMembershipId ?? '',
+      createdAt: DateTime.now(),
+      deletedAt: null,
+    );
+    // Affichage immédiat pour l'auteur, puis envoi au serveur qui rediffuse.
+    _onObjectUpsert(object);
+    try {
+      await GamesApi.pushObjects(widget.gameId!, [_toDto(object)]);
+    } catch (_) {
+      _onObjectUpsert(MapObjectView(
+        id: object.id,
+        kind: object.kind,
+        markerType: object.markerType,
+        lat: object.lat,
+        lng: object.lng,
+        properties: object.properties,
+        authorMembershipId: object.authorMembershipId,
+        createdAt: object.createdAt,
+        deletedAt: DateTime.now(),
+      ));
+      _showSnack(
+        'Pose impossible hors connexion — la file d’attente offline arrive '
+        'à la prochaine étape.',
+        isError: true,
+      );
+    }
+  }
+
+  Map<String, dynamic> _toDto(MapObjectView o, {bool deleted = false}) => {
+        'id': o.id,
+        'kind': o.kind,
+        'markerType': o.markerType,
+        'lat': o.lat,
+        'lng': o.lng,
+        'properties': o.properties,
+        'createdAt': o.createdAt.toUtc().toIso8601String(),
+        if (deleted) 'deleted': true,
+      };
+
+  /// Tap sur un marqueur : détail + suppression (auteur ou ORGA).
+  void _onFeatureTap(
+    Point<double> point,
+    LatLng coordinates,
+    String id,
+    String layerId,
+    Annotation? annotation,
+  ) {
+    if (layerId != _markersLayer) return;
+    final object = _objects[id];
+    if (object == null) return;
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final canDelete = object.authorMembershipId == _myMembershipId ||
+        me?.role == 'orga';
+    final author = _members[object.authorMembershipId];
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListTile(
+          leading: object.icon != null
+              ? Image.asset(
+                  UnitIcons.assetKey(object.icon!),
+                  width: 40,
+                  height: 40,
+                  fit: BoxFit.contain,
+                )
+              : const Icon(Icons.place),
+          title: Text(
+            (object.properties['unitLabel'] as String?) ?? 'Marqueur',
+          ),
+          subtitle: Text(
+            'posé par ${author?.displayName ?? 'un allié'}',
+          ),
+          trailing: canDelete
+              ? IconButton(
+                  tooltip: 'Supprimer',
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () async {
+                    Navigator.pop(sheetContext);
+                    _objects.remove(object.id);
+                    _refreshMarkers();
+                    try {
+                      await GamesApi.pushObjects(
+                        widget.gameId!,
+                        [_toDto(object, deleted: true)],
+                      );
+                    } catch (_) {
+                      _onObjectUpsert(object);
+                      _showSnack('Suppression impossible hors connexion.',
+                          isError: true);
+                    }
+                  },
+                )
+              : null,
+        ),
+      ),
+    );
+  }
+
+  void _showSnack(String text, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor:
+            isError ? Theme.of(context).colorScheme.error : null,
+      ),
+    );
   }
 
   Future<void> _openOfflineSheet() async {
@@ -358,8 +564,12 @@ class _MapScreenState extends State<MapScreen> {
               styleString: _styleJson!,
               initialCameraPosition: _initialCamera,
               myLocationEnabled: _locationGranted,
-              onMapCreated: (c) => _controller = c,
+              onMapCreated: (c) {
+                _controller = c;
+                c.onFeatureTapped.add(_onFeatureTap);
+              },
               onStyleLoadedCallback: _onStyleLoaded,
+              onMapLongClick: _onMapLongClick,
             ),
           if (_inGame && !_realtimeConnected)
             Positioned(

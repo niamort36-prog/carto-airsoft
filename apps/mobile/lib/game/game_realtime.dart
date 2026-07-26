@@ -15,6 +15,7 @@ class GameRealtime {
     required this.onSnapshot,
     required this.onMemberUpdate,
     required this.onConnectionChanged,
+    this.onObjectUpsert,
   });
 
   final String gameId;
@@ -22,6 +23,7 @@ class GameRealtime {
       onSnapshot;
   final void Function(MemberView member) onMemberUpdate;
   final void Function(bool connected) onConnectionChanged;
+  final void Function(MapObjectView object)? onObjectUpsert;
 
   sio.Socket? _socket;
 
@@ -57,6 +59,13 @@ class GameRealtime {
     socket.on('member:update', (dynamic data) {
       if (data is Map) {
         onMemberUpdate(MemberView.fromJson(data.cast<String, dynamic>()));
+      }
+    });
+
+    socket.on('object:upsert', (dynamic data) {
+      if (data is Map) {
+        onObjectUpsert
+            ?.call(MapObjectView.fromJson(data.cast<String, dynamic>()));
       }
     });
 

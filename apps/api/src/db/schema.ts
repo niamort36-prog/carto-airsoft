@@ -1,6 +1,7 @@
 import {
   boolean,
   geometry,
+  index,
   jsonb,
   pgTable,
   text,
@@ -92,3 +93,49 @@ export const memberships = pgTable(
 );
 
 export type Membership = typeof memberships.$inferSelect;
+
+/**
+ * Objets tactiques posés sur la carte (§7.6) — marqueurs en Phase 2,
+ * lignes/zones ensuite. Les trois exigences offline-first :
+ *  1. `id` généré CÔTÉ CLIENT → l'upsert est idempotent, aucun doublon
+ *     quand l'app renvoie sa file d'attente après une coupure ;
+ *  2. `createdAt` = horloge du téléphone (ordre chronologique réel),
+ *     `serverReceivedAt` = horloge serveur ;
+ *  3. `updatedAt` (serveur) sert de curseur de synchro delta et de
+ *     résolution de conflit « le dernier qui synchronise gagne » ;
+ *     `deletedAt` = tombstone, jamais de suppression physique.
+ */
+export const mapObjects = pgTable(
+  'map_objects',
+  {
+    id: uuid('id').primaryKey(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    authorMembershipId: uuid('author_membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    kind: text('kind', { enum: ['marker'] }).notNull().default('marker'),
+    markerType: text('marker_type', { enum: ['unit', 'waypoint', 'poi'] })
+      .notNull()
+      .default('unit'),
+    position: geometry('position', { type: 'point', mode: 'xy', srid: 4326 })
+      .notNull(),
+    /** Libre : { icon: 'infantry_hostile', label?: '…' } — piloté par le pack d'icônes. */
+    properties: jsonb('properties').notNull().default({}),
+    visibility: text('visibility', { enum: ['global', 'team', 'squad'] })
+      .notNull()
+      .default('global'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    serverReceivedAt: timestamp('server_received_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [index('map_objects_game_updated_idx').on(t.gameId, t.updatedAt)],
+);
+
+export type MapObject = typeof mapObjects.$inferSelect;

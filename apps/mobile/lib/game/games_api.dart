@@ -46,6 +46,41 @@ class GamesApi {
     _ensureOk(res);
   }
 
+  /// Pousse un lot d'objets carte — idempotent sur l'id client (§7.6).
+  static Future<List<MapObjectView>> pushObjects(
+    String gameId,
+    List<Map<String, dynamic>> objects,
+  ) async {
+    final res = await http.post(
+      _uri('/games/$gameId/map-objects/batch'),
+      headers: _headers(),
+      body: jsonEncode({'objects': objects}),
+    );
+    _ensureOk(res);
+    final list = jsonDecode(res.body) as List<dynamic>;
+    return [
+      for (final o in list)
+        MapObjectView.fromJson(o as Map<String, dynamic>),
+    ];
+  }
+
+  /// Delta de synchro : tout ce qui a changé depuis [since] (§7.6).
+  static Future<({String serverTime, List<MapObjectView> objects})>
+      syncObjects(String gameId, {String? since}) async {
+    final query = since != null ? '?since=${Uri.encodeComponent(since)}' : '';
+    final res =
+        await http.get(_uri('/games/$gameId/sync$query'), headers: _headers());
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      serverTime: body['serverTime'] as String,
+      objects: [
+        for (final o in (body['objects'] as List<dynamic>))
+          MapObjectView.fromJson(o as Map<String, dynamic>),
+      ],
+    );
+  }
+
   static void _ensureOk(http.Response res) {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       String message = 'Erreur ${res.statusCode}';

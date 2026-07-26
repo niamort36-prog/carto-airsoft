@@ -1,0 +1,155 @@
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { and, eq, gt } from 'drizzle-orm';
+import type { AuthenticatedUser } from '../auth/supabase-token.service';
+import { DRIZZLE, type Database } from '../db/db.module';
+import { mapObjects, type MapObject } from '../db/schema';
+import { GamesService } from '../games/games.service';
+import type { UpsertMapObjectDto } from './dto';
+
+/** Vue d'un objet carte diffusée aux clients (REST et WebSocket). */
+export interface MapObjectView {
+  id: string;
+  kind: string;
+  markerType: string;
+  lat: number;
+  lng: number;
+  properties: Record<string, unknown>;
+  authorMembershipId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+}
+
+export const OBJECT_UPDATED_EVENT = 'object.updated';
+export interface ObjectUpdatedEvent {
+  gameId: string;
+  object: MapObjectView;
+}
+
+@Injectable()
+export class MapObjectsService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly gamesService: GamesService,
+    private readonly events: EventEmitter2,
+  ) {}
+
+  /**
+   * Vidage de la file offline du client (§7.6). Idempotent sur l'id client ;
+   * conflit résolu en « le dernier qui synchronise gagne » (updatedAt serveur).
+   * Modifier/supprimer l'objet d'un autre est réservé à son auteur ou à un ORGA.
+   */
+  async batchUpsert(
+    auth: AuthenticatedUser,
+    gameId: string,
+    dtos: UpsertMapObjectDto[],
+  ): Promise<MapObjectView[]> {
+    const membership = await this.gamesService.findActiveMembership(
+      auth,
+      gameId,
+    );
+    const isOrga = membership.role === 'orga';
+    const results: MapObjectView[] = [];
+
+    for (const dto of dtos) {
+      const [existing] = await this.db
+        .select()
+        .from(mapObjects)
+        .where(eq(mapObjects.id, dto.id));
+
+      if (existing) {
+        // Un id client appartient à une partie : pas de « télé-transport ».
+        if (existing.gameId !== gameId) {
+          throw new ForbiddenException('Objet rattaché à une autre partie');
+        }
+        if (existing.authorMembershipId !== membership.id && !isOrga) {
+          throw new ForbiddenException(
+            'Seul l’auteur ou un ORGA peut modifier cet objet',
+          );
+        }
+        const [row] = await this.db
+          .update(mapObjects)
+          .set({
+            markerType: dto.markerType ?? existing.markerType,
+            position: { x: dto.lng, y: dto.lat },
+            properties: dto.properties ?? existing.properties,
+            updatedAt: new Date(),
+            deletedAt: dto.deleted ? new Date() : null,
+          })
+          .where(eq(mapObjects.id, dto.id))
+          .returning();
+        results.push(this.emit(gameId, row));
+      } else {
+        const [row] = await this.db
+          .insert(mapObjects)
+          .values({
+            id: dto.id,
+            gameId,
+            authorMembershipId: membership.id,
+            kind: dto.kind ?? 'marker',
+            markerType: dto.markerType ?? 'unit',
+            position: { x: dto.lng, y: dto.lat },
+            properties: dto.properties ?? {},
+            createdAt: new Date(dto.createdAt),
+            deletedAt: dto.deleted ? new Date() : null,
+          })
+          .returning();
+        results.push(this.emit(gameId, row));
+      }
+    }
+    return results;
+  }
+
+  /**
+   * Réconciliation inverse (§7.6) : « qu'est-ce qui a changé depuis ? ».
+   * Renvoie créations, modifications ET tombstones après `since`, plus
+   * `serverTime` à stocker comme prochain curseur.
+   */
+  async sync(
+    auth: AuthenticatedUser,
+    gameId: string,
+    since?: string,
+  ): Promise<{ serverTime: string; objects: MapObjectView[] }> {
+    await this.gamesService.findActiveMembership(auth, gameId);
+    const conditions = [eq(mapObjects.gameId, gameId)];
+    if (since) {
+      conditions.push(gt(mapObjects.updatedAt, new Date(since)));
+    }
+    const rows = await this.db
+      .select()
+      .from(mapObjects)
+      .where(and(...conditions))
+      .orderBy(mapObjects.updatedAt);
+    return {
+      serverTime: new Date().toISOString(),
+      objects: rows.map((r) => this.toView(r)),
+    };
+  }
+
+  private emit(gameId: string, row: MapObject): MapObjectView {
+    const view = this.toView(row);
+    const event: ObjectUpdatedEvent = { gameId, object: view };
+    this.events.emit(OBJECT_UPDATED_EVENT, event);
+    return view;
+  }
+
+  private toView(row: MapObject): MapObjectView {
+    return {
+      id: row.id,
+      kind: row.kind,
+      markerType: row.markerType,
+      lng: row.position.x,
+      lat: row.position.y,
+      properties: (row.properties ?? {}) as Record<string, unknown>,
+      authorMembershipId: row.authorMembershipId,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      deletedAt: row.deletedAt,
+    };
+  }
+}
