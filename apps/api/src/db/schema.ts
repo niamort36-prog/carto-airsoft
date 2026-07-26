@@ -125,12 +125,17 @@ export const mapObjects = pgTable(
     authorMembershipId: uuid('author_membership_id')
       .notNull()
       .references(() => memberships.id),
-    kind: text('kind', { enum: ['marker'] }).notNull().default('marker'),
+    kind: text('kind', { enum: ['marker', 'line', 'zone'] })
+      .notNull()
+      .default('marker'),
     markerType: text('marker_type', { enum: ['unit', 'waypoint', 'poi'] })
       .notNull()
       .default('unit'),
+    /** Point du marqueur, ou premier sommet pour line/zone (référence). */
     position: geometry('position', { type: 'point', mode: 'xy', srid: 4326 })
       .notNull(),
+    /** GeoJSON LineString/Polygon pour les kinds line/zone. */
+    geometry: jsonb('geometry'),
     /** Libre : { icon: 'infantry_hostile', label?: '…' } — piloté par le pack d'icônes. */
     properties: jsonb('properties').notNull().default({}),
     visibility: text('visibility', { enum: ['global', 'team', 'squad'] })

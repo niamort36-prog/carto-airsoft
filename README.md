@@ -85,7 +85,8 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Alliés rendus avec leur insigne d'unité à contour blanc, tailles adaptées au zoom ; heure de pose sous les marqueurs
   - [x] Sa propre position = son insigne (au choix, contour blanc épais) — remplace le point bleu en partie
   - [x] File offline locale (Drift) — validée en mode avion le 2026-07-26 : pose hors ligne (translucide « en attente »), survie au redémarrage complet, liste des parties en cache, envoi automatique à la reconnexion, réconciliation par delta
-  - [ ] Dessin de zones et de lignes
+  - [x] Dessin de zones et de lignes — mode dessin (sommets au tap), validation ligne/zone, rendu remplissage+contour, tap pour la fiche, offline-first par la même file
+  - [x] Insigne réservé aux gradés : un sans-grade le reçoit de sa hiérarchie
   - [ ] Messagerie intégrée (global/équipe/escouade)
   - [ ] Service Android premier plan (GPS écran éteint)
 - [ ] Phase 3 — Parties & rôles (QR, permissions, console web)

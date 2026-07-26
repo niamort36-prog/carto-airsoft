@@ -64,6 +64,9 @@ class ObjectSyncService {
         lng: r.lng,
         properties:
             (jsonDecode(r.propertiesJson) as Map).cast<String, dynamic>(),
+        geometry: r.geometryJson != null
+            ? (jsonDecode(r.geometryJson!) as Map).cast<String, dynamic>()
+            : null,
         authorMembershipId: r.authorMembershipId,
         createdAt: r.createdAt,
         deletedAt: r.deletedAt,
@@ -79,6 +82,8 @@ class ObjectSyncService {
         lat: o.lat,
         lng: o.lng,
         propertiesJson: jsonEncode(o.properties),
+        geometryJson:
+            Value(o.geometry != null ? jsonEncode(o.geometry) : null),
         authorMembershipId: o.authorMembershipId,
         createdAt: o.createdAt,
         deletedAt: Value(o.deletedAt),
@@ -93,6 +98,9 @@ class ObjectSyncService {
         'lng': r.lng,
         'properties':
             (jsonDecode(r.propertiesJson) as Map).cast<String, dynamic>(),
+        if (r.geometryJson != null)
+          'geometry':
+              (jsonDecode(r.geometryJson!) as Map).cast<String, dynamic>(),
         'createdAt': r.createdAt.toUtc().toIso8601String(),
         if (r.deletedAt != null) 'deleted': true,
       };

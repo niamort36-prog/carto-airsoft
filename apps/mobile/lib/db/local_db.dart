@@ -15,6 +15,9 @@ class LocalObjects extends Table {
   RealColumn get lat => real()();
   RealColumn get lng => real()();
   TextColumn get propertiesJson => text()();
+
+  /// GeoJSON LineString/Polygon (kinds line/zone), null pour les marqueurs.
+  TextColumn get geometryJson => text().nullable()();
   TextColumn get authorMembershipId => text()();
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get deletedAt => dateTime().nullable()();
@@ -54,13 +57,16 @@ class LocalDb extends _$LocalDb {
   static final LocalDb instance = LocalDb();
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
         onUpgrade: (m, from, to) async {
           if (from < 2) {
             await m.createTable(localGames);
+          }
+          if (from < 3) {
+            await m.addColumn(localObjects, localObjects.geometryJson);
           }
         },
       );

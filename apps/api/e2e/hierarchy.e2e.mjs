@@ -100,10 +100,16 @@ await expect403(
   'insigne d’un capitaine par un joueur',
 );
 
-// Mais chacun choisit librement SON propre insigne
-const selfBadge = await api('PATCH', `/games/${game.id}/members/${p3.membershipId}`, t3, { unitType: 'radio' });
-if (selfBadge.unitType !== 'radio') throw new Error('insigne perso refusé');
-console.log('un joueur change son propre insigne → radio ✓');
+// Un joueur SANS grade ne choisit pas son propre insigne…
+await expect403(
+  () => api('PATCH', `/games/${game.id}/members/${p3.membershipId}`, t3, { unitType: 'radio' }),
+  'insigne perso d’un sans-grade',
+);
+
+// …mais un gradé (capitaine) choisit le sien librement
+const selfBadge = await api('PATCH', `/games/${game.id}/members/${p2.membershipId}`, t2, { unitType: 'recon' });
+if (selfBadge.unitType !== 'recon') throw new Error('insigne perso d’un gradé refusé');
+console.log('un capitaine change son propre insigne → recon ✓');
 
 // Tri descendant : commandant, capitaine, joueur
 members = await api('GET', `/games/${game.id}/members`, t1);

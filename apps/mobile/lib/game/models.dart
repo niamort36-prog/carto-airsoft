@@ -71,6 +71,7 @@ class MapObjectView {
     required this.authorMembershipId,
     required this.createdAt,
     required this.deletedAt,
+    this.geometry,
     this.pending = false,
   });
 
@@ -83,6 +84,9 @@ class MapObjectView {
   final String authorMembershipId;
   final DateTime createdAt;
   final DateTime? deletedAt;
+
+  /// GeoJSON LineString/Polygon pour les kinds line/zone.
+  final Map<String, dynamic>? geometry;
 
   /// true = pas encore accepté par le serveur (« en attente de synchro »).
   final bool pending;
@@ -99,6 +103,7 @@ class MapObjectView {
         lng: (json['lng'] as num).toDouble(),
         properties:
             (json['properties'] as Map?)?.cast<String, dynamic>() ?? {},
+        geometry: (json['geometry'] as Map?)?.cast<String, dynamic>(),
         authorMembershipId: json['authorMembershipId'] as String,
         createdAt: DateTime.parse(json['createdAt'] as String),
         deletedAt: json['deletedAt'] != null

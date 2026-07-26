@@ -14,7 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-export const OBJECT_KINDS = ['marker'] as const;
+export const OBJECT_KINDS = ['marker', 'line', 'zone'] as const;
 export const MARKER_TYPES = ['unit', 'waypoint', 'poi'] as const;
 
 /**
@@ -37,13 +37,22 @@ export class UpsertMapObjectDto {
   @IsIn(MARKER_TYPES)
   markerType?: (typeof MARKER_TYPES)[number];
 
-  @ApiProperty({ example: 48.404 })
+  @ApiPropertyOptional({ example: 48.404, description: 'Requis pour kind=marker' })
+  @IsOptional()
   @IsLatitude()
-  lat!: number;
+  lat?: number;
 
-  @ApiProperty({ example: 2.632 })
+  @ApiPropertyOptional({ example: 2.632, description: 'Requis pour kind=marker' })
+  @IsOptional()
   @IsLongitude()
-  lng!: number;
+  lng?: number;
+
+  @ApiPropertyOptional({
+    description: 'GeoJSON — LineString (kind=line) ou Polygon (kind=zone)',
+  })
+  @IsOptional()
+  @IsObject()
+  geometry?: Record<string, unknown>;
 
   @ApiPropertyOptional({
     description: 'Libre — ex. { "icon": "infantry_hostile", "label": "…" }',

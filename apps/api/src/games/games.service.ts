@@ -170,8 +170,9 @@ export class GamesService {
    * Gestion d'un membre par un gradé (§5, version jouable) :
    *  - nomination (capitaine / chef d'escouade / joueur) : commandant
    *    uniquement, jamais sur lui-même ni sur un autre commandant ;
-   *  - insigne (icône d'unité) : soi-même librement, ou tout gradé sur
-   *    un rang STRICTEMENT inférieur au sien.
+   *  - insigne (icône d'unité) : réservé aux GRADÉS — sur eux-mêmes ou
+   *    sur tout rang strictement inférieur. Un joueur sans grade reçoit
+   *    son insigne de sa hiérarchie, il ne le choisit pas.
    * Validé serveur — le client n'émet qu'une intention (§2.1).
    */
   async updateMember(
@@ -209,14 +210,17 @@ export class GamesService {
         throw new ForbiddenException('Le commandant ne peut pas être rétrogradé');
       }
     }
-    if (
-      dto.unitType != null &&
-      target.id !== requester.id &&
-      requesterRank >= targetRank
-    ) {
-      throw new ForbiddenException(
-        'L’insigne ne se modifie que sur soi ou sur un rang inférieur',
-      );
+    if (dto.unitType != null) {
+      const isSelf = target.id === requester.id;
+      const allowed = isSelf
+        ? requesterRank < ROLE_RANK.joueur // gradés uniquement sur soi
+        : requesterRank < targetRank; // sinon rang strictement supérieur
+      if (!allowed) {
+        throw new ForbiddenException(
+          'L’insigne est attribué par la hiérarchie : gradés uniquement, '
+          + 'sur soi ou sur un rang inférieur',
+        );
+      }
     }
 
     await this.db

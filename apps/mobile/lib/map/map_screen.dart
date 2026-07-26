@@ -34,6 +34,8 @@ class _MapScreenState extends State<MapScreen> {
   static const _markersSource = 'markers';
   static const _markersLayer = 'markers-icons';
   static const _selfSource = 'self';
+  static const _drawingsSource = 'drawings';
+  static const _draftSource = 'draft';
 
   /// Tailles d'icônes interpolées sur le zoom : toujours visibles de loin,
   /// confortables de près.
@@ -66,6 +68,10 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription<Position>? _positionSub;
   Timer? _heartbeat;
   Position? _lastPosition;
+
+  /// Mode dessin (§ Phase 2) : chaque tap ajoute un sommet.
+  bool _drawing = false;
+  final List<LatLng> _draftPoints = [];
 
   bool get _inGame => widget.gameId != null;
 
@@ -315,7 +321,10 @@ class _MapScreenState extends State<MapScreen> {
       ),
       title: Text('${me.displayName} (moi)'),
       subtitle: Text('${roleLabel(me.role)} · ${me.lifeStatus.label}'),
-      trailing: IconButton(
+      // L'insigne se mérite : les sans-grade le reçoivent de leur hiérarchie.
+      trailing: roleRank(me.role) >= roleRank('joueur')
+          ? null
+          : IconButton(
         tooltip: 'Choisir mon insigne',
         icon: const Icon(Icons.edit),
         onPressed: () async {
@@ -514,6 +523,25 @@ class _MapScreenState extends State<MapScreen> {
           );
         }
       }
+      // Zones (remplissage translucide) et lignes — sous les marqueurs.
+      await controller.addGeoJsonSource(_drawingsSource, _drawingsGeoJson());
+      await controller.addFillLayer(
+        _drawingsSource,
+        'drawings-fill',
+        const FillLayerProperties(
+          fillColor: ['get', 'color'],
+          fillOpacity: ['get', 'fillOpacity'],
+        ),
+      );
+      await controller.addLineLayer(
+        _drawingsSource,
+        'drawings-line',
+        const LineLayerProperties(
+          lineColor: ['get', 'color'],
+          lineWidth: 3.0,
+          lineOpacity: ['get', 'opacity'],
+        ),
+      );
       await controller.addGeoJsonSource(_markersSource, _markersGeoJson());
       // Icône du marqueur + heure de pose en petit dessous (le style déclare
       // un endpoint `glyphs` pour le texte ; mis en cache comme les tuiles).
@@ -562,6 +590,27 @@ class _MapScreenState extends State<MapScreen> {
           iconAllowOverlap: true,
         ),
       );
+      // Brouillon de dessin (pointillés blancs + sommets).
+      await controller.addGeoJsonSource(_draftSource, _draftGeoJson());
+      await controller.addLineLayer(
+        _draftSource,
+        'draft-line',
+        const LineLayerProperties(
+          lineColor: '#ffffff',
+          lineWidth: 2.5,
+          lineDasharray: [2, 1.5],
+        ),
+      );
+      await controller.addCircleLayer(
+        _draftSource,
+        'draft-points',
+        const CircleLayerProperties(
+          circleRadius: 5,
+          circleColor: '#ffffff',
+          circleStrokeColor: '#000000',
+          circleStrokeWidth: 1.5,
+        ),
+      );
       _styleReady = true;
       _refreshAllies();
       _refreshMarkers();
@@ -579,7 +628,8 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, dynamic> _markersGeoJson() => {
         'type': 'FeatureCollection',
         'features': [
-          for (final o in _objects.values)
+          // Uniquement les marqueurs ponctuels — lignes/zones ont leur couche.
+          for (final o in _objects.values.where((o) => o.kind == 'marker'))
             {
               'type': 'Feature',
               'id': o.id,
@@ -602,6 +652,109 @@ class _MapScreenState extends State<MapScreen> {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
     controller.setGeoJsonSource(_markersSource, _markersGeoJson());
+    controller.setGeoJsonSource(_drawingsSource, _drawingsGeoJson());
+  }
+
+  Map<String, dynamic> _drawingsGeoJson() => {
+        'type': 'FeatureCollection',
+        'features': [
+          for (final o in _objects.values)
+            if (o.kind != 'marker' && o.geometry != null)
+              {
+                'type': 'Feature',
+                'id': o.id,
+                'geometry': o.geometry,
+                'properties': {
+                  'color': (o.properties['color'] as String?) ?? '#FF9800',
+                  // Translucide tant que le serveur n'a pas accepté (§7.6).
+                  'opacity': o.pending ? 0.45 : 0.9,
+                  'fillOpacity':
+                      o.kind == 'zone' ? (o.pending ? 0.10 : 0.22) : 0.0,
+                },
+              },
+        ],
+      };
+
+  Map<String, dynamic> _draftGeoJson() => {
+        'type': 'FeatureCollection',
+        'features': [
+          for (final p in _draftPoints)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [p.longitude, p.latitude],
+              },
+              'properties': const <String, dynamic>{},
+            },
+          if (_draftPoints.length >= 2)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': [
+                  for (final p in _draftPoints) [p.longitude, p.latitude],
+                ],
+              },
+              'properties': const <String, dynamic>{},
+            },
+        ],
+      };
+
+  void _refreshDraft() {
+    final controller = _controller;
+    if (controller == null || !_styleReady) return;
+    controller.setGeoJsonSource(_draftSource, _draftGeoJson());
+  }
+
+  void _onMapClick(Point<double> point, LatLng latLng) {
+    if (!_drawing) return;
+    setState(() => _draftPoints.add(latLng));
+    _refreshDraft();
+  }
+
+  void _cancelDrawing() {
+    setState(() {
+      _drawing = false;
+      _draftPoints.clear();
+    });
+    _refreshDraft();
+  }
+
+  /// Termine le dessin en ligne ou en zone — même chemin offline-first que
+  /// les marqueurs : base locale, affichage immédiat, file d'attente (§7.6).
+  Future<void> _finishDrawing(String kind) async {
+    final coords = [
+      for (final p in _draftPoints) [p.longitude, p.latitude],
+    ];
+    final geometry = kind == 'line'
+        ? {'type': 'LineString', 'coordinates': coords}
+        : {
+            'type': 'Polygon',
+            'coordinates': [
+              [...coords, coords.first], // anneau fermé
+            ],
+          };
+    final object = MapObjectView(
+      id: const Uuid().v7(),
+      kind: kind,
+      markerType: 'poi',
+      lat: _draftPoints.first.latitude,
+      lng: _draftPoints.first.longitude,
+      properties: {
+        'color': kind == 'zone' ? '#F44336' : '#2196F3',
+        'unitLabel': kind == 'zone' ? 'Zone' : 'Ligne',
+      },
+      geometry: geometry,
+      authorMembershipId: _myMembershipId ?? '',
+      createdAt: DateTime.now(),
+      deletedAt: null,
+      pending: true,
+    );
+    _cancelDrawing();
+    await _syncService!.saveLocal(object, pending: true);
+    _applyObject(object);
+    _kickSync();
   }
 
   Map<String, dynamic> _alliesGeoJson() {
@@ -661,7 +814,7 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Appui long : pose d'un marqueur d'unité à l'endroit visé (§ Phase 2).
   Future<void> _onMapLongClick(Point<double> point, LatLng latLng) async {
-    if (!_inGame) return;
+    if (!_inGame || _drawing) return;
     final choice = await showModalBottomSheet<UnitChoice>(
       context: context,
       showDragHandle: true,
@@ -701,7 +854,8 @@ class _MapScreenState extends State<MapScreen> {
     String layerId,
     Annotation? annotation,
   ) {
-    if (layerId != _markersLayer) return;
+    const tappable = {_markersLayer, 'drawings-fill', 'drawings-line'};
+    if (!tappable.contains(layerId)) return;
     final object = _objects[id];
     if (object == null) return;
     final me = _myMembershipId != null ? _members[_myMembershipId] : null;
@@ -713,14 +867,18 @@ class _MapScreenState extends State<MapScreen> {
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
         child: ListTile(
-          leading: object.icon != null
-              ? Image.asset(
-                  UnitIcons.assetKey(object.icon!),
-                  width: 40,
-                  height: 40,
-                  fit: BoxFit.contain,
-                )
-              : const Icon(Icons.place),
+          leading: switch (object.kind) {
+            'zone' => const Icon(Icons.pentagon_outlined, size: 32),
+            'line' => const Icon(Icons.timeline, size: 32),
+            _ => object.icon != null
+                ? Image.asset(
+                    UnitIcons.assetKey(object.icon!),
+                    width: 40,
+                    height: 40,
+                    fit: BoxFit.contain,
+                  )
+                : const Icon(Icons.place),
+          },
           title: Text(
             (object.properties['unitLabel'] as String?) ?? 'Marqueur',
           ),
@@ -787,6 +945,20 @@ class _MapScreenState extends State<MapScreen> {
         title: Text(widget.gameName ?? 'Carte libre'),
         actions: [
           if (_inGame)
+            IconButton(
+              tooltip: _drawing ? 'Quitter le dessin' : 'Dessiner zone/ligne',
+              isSelected: _drawing,
+              icon: const Icon(Icons.polyline_outlined),
+              selectedIcon: const Icon(Icons.polyline),
+              onPressed: () {
+                if (_drawing) {
+                  _cancelDrawing();
+                } else {
+                  setState(() => _drawing = true);
+                }
+              },
+            ),
+          if (_inGame)
             Padding(
               padding: const EdgeInsets.only(right: 4),
               child: ActionChip(
@@ -825,6 +997,7 @@ class _MapScreenState extends State<MapScreen> {
               },
               onStyleLoadedCallback: _onStyleLoaded,
               onMapLongClick: _onMapLongClick,
+              onMapClick: _onMapClick,
             ),
           if (_inGame && !_realtimeConnected)
             Positioned(
@@ -851,7 +1024,41 @@ class _MapScreenState extends State<MapScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (_inGame)
+                if (_drawing)
+                  _bottomBar(
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${_draftPoints.length} pt${_draftPoints.length > 1 ? 's' : ''}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          icon: const Icon(Icons.close),
+                          label: const Text('Annuler'),
+                          onPressed: _cancelDrawing,
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.timeline),
+                          label: const Text('Ligne'),
+                          onPressed: _draftPoints.length >= 2
+                              ? () => _finishDrawing('line')
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.pentagon_outlined),
+                          label: const Text('Zone'),
+                          onPressed: _draftPoints.length >= 3
+                              ? () => _finishDrawing('zone')
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                if (_inGame && !_drawing)
                   _bottomBar(
                     child: SegmentedButton<LifeStatus>(
                       showSelectedIcon: false,

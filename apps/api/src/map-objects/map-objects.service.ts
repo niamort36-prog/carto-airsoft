@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -18,6 +19,8 @@ export interface MapObjectView {
   markerType: string;
   lat: number;
   lng: number;
+  /** GeoJSON LineString/Polygon pour les kinds line/zone. */
+  geometry: Record<string, unknown> | null;
   properties: Record<string, unknown>;
   authorMembershipId: string;
   createdAt: Date;
@@ -64,6 +67,9 @@ export class MapObjectsService {
         .from(mapObjects)
         .where(eq(mapObjects.id, dto.id));
 
+      const kind = dto.kind ?? existing?.kind ?? 'marker';
+      const { position, geometry } = this.normalizeGeometry(kind, dto);
+
       if (existing) {
         // Un id client appartient à une partie : pas de « télé-transport ».
         if (existing.gameId !== gameId) {
@@ -78,7 +84,8 @@ export class MapObjectsService {
           .update(mapObjects)
           .set({
             markerType: dto.markerType ?? existing.markerType,
-            position: { x: dto.lng, y: dto.lat },
+            position,
+            geometry,
             properties: dto.properties ?? existing.properties,
             updatedAt: new Date(),
             deletedAt: dto.deleted ? new Date() : null,
@@ -93,9 +100,10 @@ export class MapObjectsService {
             id: dto.id,
             gameId,
             authorMembershipId: membership.id,
-            kind: dto.kind ?? 'marker',
+            kind,
             markerType: dto.markerType ?? 'unit',
-            position: { x: dto.lng, y: dto.lat },
+            position,
+            geometry,
             properties: dto.properties ?? {},
             createdAt: new Date(dto.createdAt),
             deletedAt: dto.deleted ? new Date() : null,
@@ -147,11 +155,69 @@ export class MapObjectsService {
       markerType: row.markerType,
       lng: row.position.x,
       lat: row.position.y,
+      geometry: (row.geometry ?? null) as Record<string, unknown> | null,
       properties: (row.properties ?? {}) as Record<string, unknown>,
       authorMembershipId: row.authorMembershipId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
       deletedAt: row.deletedAt,
     };
+  }
+
+  /**
+   * Valide la géométrie selon le kind (arbitre serveur, §2.1) :
+   *  - marker : lat/lng requis → Point ;
+   *  - line   : GeoJSON LineString d'au moins 2 sommets ;
+   *  - zone   : GeoJSON Polygon dont l'anneau (≥ 4 sommets) est fermé.
+   * Renvoie la position de référence (marqueur ou premier sommet).
+   */
+  private normalizeGeometry(
+    kind: string,
+    dto: UpsertMapObjectDto,
+  ): { position: { x: number; y: number }; geometry: unknown } {
+    const validPair = (p: unknown): p is [number, number] =>
+      Array.isArray(p) &&
+      typeof p[0] === 'number' &&
+      typeof p[1] === 'number' &&
+      p[1] >= -90 &&
+      p[1] <= 90 &&
+      p[0] >= -180 &&
+      p[0] <= 180;
+
+    if (kind === 'marker') {
+      if (typeof dto.lat !== 'number' || typeof dto.lng !== 'number') {
+        throw new BadRequestException('marker : lat/lng requis');
+      }
+      return { position: { x: dto.lng, y: dto.lat }, geometry: null };
+    }
+
+    const g = dto.geometry as
+      | { type?: string; coordinates?: unknown }
+      | undefined;
+    const expected = kind === 'line' ? 'LineString' : 'Polygon';
+    if (!g || g.type !== expected || !Array.isArray(g.coordinates)) {
+      throw new BadRequestException(`${kind} : géométrie ${expected} requise`);
+    }
+    const ring =
+      kind === 'line'
+        ? (g.coordinates as unknown[])
+        : ((g.coordinates as unknown[])[0] as unknown[]);
+    const minPoints = kind === 'line' ? 2 : 4;
+    if (
+      !Array.isArray(ring) ||
+      ring.length < minPoints ||
+      !ring.every(validPair)
+    ) {
+      throw new BadRequestException(`${kind} : sommets invalides`);
+    }
+    if (kind === 'zone') {
+      const first = ring[0] as [number, number];
+      const last = ring[ring.length - 1] as [number, number];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        throw new BadRequestException('zone : l’anneau doit être fermé');
+      }
+    }
+    const [lng, lat] = ring[0] as [number, number];
+    return { position: { x: lng, y: lat }, geometry: g };
   }
 }

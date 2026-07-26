@@ -1,0 +1,1 @@
+ALTER TABLE "map_objects" ADD COLUMN "geometry" jsonb;

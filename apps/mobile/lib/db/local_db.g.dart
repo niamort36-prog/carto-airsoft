@@ -76,6 +76,17 @@ class $LocalObjectsTable extends LocalObjects
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _geometryJsonMeta = const VerificationMeta(
+    'geometryJson',
+  );
+  @override
+  late final GeneratedColumn<String> geometryJson = GeneratedColumn<String>(
+    'geometry_json',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _authorMembershipIdMeta =
       const VerificationMeta('authorMembershipId');
   @override
@@ -133,6 +144,7 @@ class $LocalObjectsTable extends LocalObjects
     lat,
     lng,
     propertiesJson,
+    geometryJson,
     authorMembershipId,
     createdAt,
     deletedAt,
@@ -206,6 +218,15 @@ class $LocalObjectsTable extends LocalObjects
     } else if (isInserting) {
       context.missing(_propertiesJsonMeta);
     }
+    if (data.containsKey('geometry_json')) {
+      context.handle(
+        _geometryJsonMeta,
+        geometryJson.isAcceptableOrUnknown(
+          data['geometry_json']!,
+          _geometryJsonMeta,
+        ),
+      );
+    }
     if (data.containsKey('author_membership_id')) {
       context.handle(
         _authorMembershipIdMeta,
@@ -274,6 +295,10 @@ class $LocalObjectsTable extends LocalObjects
         DriftSqlType.string,
         data['${effectivePrefix}properties_json'],
       )!,
+      geometryJson: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}geometry_json'],
+      ),
       authorMembershipId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}author_membership_id'],
@@ -308,6 +333,9 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
   final double lat;
   final double lng;
   final String propertiesJson;
+
+  /// GeoJSON LineString/Polygon (kinds line/zone), null pour les marqueurs.
+  final String? geometryJson;
   final String authorMembershipId;
   final DateTime createdAt;
   final DateTime? deletedAt;
@@ -322,6 +350,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
     required this.lat,
     required this.lng,
     required this.propertiesJson,
+    this.geometryJson,
     required this.authorMembershipId,
     required this.createdAt,
     this.deletedAt,
@@ -337,6 +366,9 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
     map['lat'] = Variable<double>(lat);
     map['lng'] = Variable<double>(lng);
     map['properties_json'] = Variable<String>(propertiesJson);
+    if (!nullToAbsent || geometryJson != null) {
+      map['geometry_json'] = Variable<String>(geometryJson);
+    }
     map['author_membership_id'] = Variable<String>(authorMembershipId);
     map['created_at'] = Variable<DateTime>(createdAt);
     if (!nullToAbsent || deletedAt != null) {
@@ -355,6 +387,9 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
       lat: Value(lat),
       lng: Value(lng),
       propertiesJson: Value(propertiesJson),
+      geometryJson: geometryJson == null && nullToAbsent
+          ? const Value.absent()
+          : Value(geometryJson),
       authorMembershipId: Value(authorMembershipId),
       createdAt: Value(createdAt),
       deletedAt: deletedAt == null && nullToAbsent
@@ -377,6 +412,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
       lat: serializer.fromJson<double>(json['lat']),
       lng: serializer.fromJson<double>(json['lng']),
       propertiesJson: serializer.fromJson<String>(json['propertiesJson']),
+      geometryJson: serializer.fromJson<String?>(json['geometryJson']),
       authorMembershipId: serializer.fromJson<String>(
         json['authorMembershipId'],
       ),
@@ -396,6 +432,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
       'lat': serializer.toJson<double>(lat),
       'lng': serializer.toJson<double>(lng),
       'propertiesJson': serializer.toJson<String>(propertiesJson),
+      'geometryJson': serializer.toJson<String?>(geometryJson),
       'authorMembershipId': serializer.toJson<String>(authorMembershipId),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'deletedAt': serializer.toJson<DateTime?>(deletedAt),
@@ -411,6 +448,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
     double? lat,
     double? lng,
     String? propertiesJson,
+    Value<String?> geometryJson = const Value.absent(),
     String? authorMembershipId,
     DateTime? createdAt,
     Value<DateTime?> deletedAt = const Value.absent(),
@@ -423,6 +461,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
     lat: lat ?? this.lat,
     lng: lng ?? this.lng,
     propertiesJson: propertiesJson ?? this.propertiesJson,
+    geometryJson: geometryJson.present ? geometryJson.value : this.geometryJson,
     authorMembershipId: authorMembershipId ?? this.authorMembershipId,
     createdAt: createdAt ?? this.createdAt,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -441,6 +480,9 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
       propertiesJson: data.propertiesJson.present
           ? data.propertiesJson.value
           : this.propertiesJson,
+      geometryJson: data.geometryJson.present
+          ? data.geometryJson.value
+          : this.geometryJson,
       authorMembershipId: data.authorMembershipId.present
           ? data.authorMembershipId.value
           : this.authorMembershipId,
@@ -460,6 +502,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
           ..write('lat: $lat, ')
           ..write('lng: $lng, ')
           ..write('propertiesJson: $propertiesJson, ')
+          ..write('geometryJson: $geometryJson, ')
           ..write('authorMembershipId: $authorMembershipId, ')
           ..write('createdAt: $createdAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -477,6 +520,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
     lat,
     lng,
     propertiesJson,
+    geometryJson,
     authorMembershipId,
     createdAt,
     deletedAt,
@@ -493,6 +537,7 @@ class LocalObject extends DataClass implements Insertable<LocalObject> {
           other.lat == this.lat &&
           other.lng == this.lng &&
           other.propertiesJson == this.propertiesJson &&
+          other.geometryJson == this.geometryJson &&
           other.authorMembershipId == this.authorMembershipId &&
           other.createdAt == this.createdAt &&
           other.deletedAt == this.deletedAt &&
@@ -507,6 +552,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
   final Value<double> lat;
   final Value<double> lng;
   final Value<String> propertiesJson;
+  final Value<String?> geometryJson;
   final Value<String> authorMembershipId;
   final Value<DateTime> createdAt;
   final Value<DateTime?> deletedAt;
@@ -520,6 +566,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
     this.lat = const Value.absent(),
     this.lng = const Value.absent(),
     this.propertiesJson = const Value.absent(),
+    this.geometryJson = const Value.absent(),
     this.authorMembershipId = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -534,6 +581,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
     required double lat,
     required double lng,
     required String propertiesJson,
+    this.geometryJson = const Value.absent(),
     required String authorMembershipId,
     required DateTime createdAt,
     this.deletedAt = const Value.absent(),
@@ -556,6 +604,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
     Expression<double>? lat,
     Expression<double>? lng,
     Expression<String>? propertiesJson,
+    Expression<String>? geometryJson,
     Expression<String>? authorMembershipId,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? deletedAt,
@@ -570,6 +619,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
       if (lat != null) 'lat': lat,
       if (lng != null) 'lng': lng,
       if (propertiesJson != null) 'properties_json': propertiesJson,
+      if (geometryJson != null) 'geometry_json': geometryJson,
       if (authorMembershipId != null)
         'author_membership_id': authorMembershipId,
       if (createdAt != null) 'created_at': createdAt,
@@ -587,6 +637,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
     Value<double>? lat,
     Value<double>? lng,
     Value<String>? propertiesJson,
+    Value<String?>? geometryJson,
     Value<String>? authorMembershipId,
     Value<DateTime>? createdAt,
     Value<DateTime?>? deletedAt,
@@ -601,6 +652,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
       lat: lat ?? this.lat,
       lng: lng ?? this.lng,
       propertiesJson: propertiesJson ?? this.propertiesJson,
+      geometryJson: geometryJson ?? this.geometryJson,
       authorMembershipId: authorMembershipId ?? this.authorMembershipId,
       createdAt: createdAt ?? this.createdAt,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -633,6 +685,9 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
     if (propertiesJson.present) {
       map['properties_json'] = Variable<String>(propertiesJson.value);
     }
+    if (geometryJson.present) {
+      map['geometry_json'] = Variable<String>(geometryJson.value);
+    }
     if (authorMembershipId.present) {
       map['author_membership_id'] = Variable<String>(authorMembershipId.value);
     }
@@ -661,6 +716,7 @@ class LocalObjectsCompanion extends UpdateCompanion<LocalObject> {
           ..write('lat: $lat, ')
           ..write('lng: $lng, ')
           ..write('propertiesJson: $propertiesJson, ')
+          ..write('geometryJson: $geometryJson, ')
           ..write('authorMembershipId: $authorMembershipId, ')
           ..write('createdAt: $createdAt, ')
           ..write('deletedAt: $deletedAt, ')
@@ -1209,6 +1265,7 @@ typedef $$LocalObjectsTableCreateCompanionBuilder =
       required double lat,
       required double lng,
       required String propertiesJson,
+      Value<String?> geometryJson,
       required String authorMembershipId,
       required DateTime createdAt,
       Value<DateTime?> deletedAt,
@@ -1224,6 +1281,7 @@ typedef $$LocalObjectsTableUpdateCompanionBuilder =
       Value<double> lat,
       Value<double> lng,
       Value<String> propertiesJson,
+      Value<String?> geometryJson,
       Value<String> authorMembershipId,
       Value<DateTime> createdAt,
       Value<DateTime?> deletedAt,
@@ -1272,6 +1330,11 @@ class $$LocalObjectsTableFilterComposer
 
   ColumnFilters<String> get propertiesJson => $composableBuilder(
     column: $table.propertiesJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get geometryJson => $composableBuilder(
+    column: $table.geometryJson,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1340,6 +1403,11 @@ class $$LocalObjectsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get geometryJson => $composableBuilder(
+    column: $table.geometryJson,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get authorMembershipId => $composableBuilder(
     column: $table.authorMembershipId,
     builder: (column) => ColumnOrderings(column),
@@ -1392,6 +1460,11 @@ class $$LocalObjectsTableAnnotationComposer
 
   GeneratedColumn<String> get propertiesJson => $composableBuilder(
     column: $table.propertiesJson,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get geometryJson => $composableBuilder(
+    column: $table.geometryJson,
     builder: (column) => column,
   );
 
@@ -1448,6 +1521,7 @@ class $$LocalObjectsTableTableManager
                 Value<double> lat = const Value.absent(),
                 Value<double> lng = const Value.absent(),
                 Value<String> propertiesJson = const Value.absent(),
+                Value<String?> geometryJson = const Value.absent(),
                 Value<String> authorMembershipId = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -1461,6 +1535,7 @@ class $$LocalObjectsTableTableManager
                 lat: lat,
                 lng: lng,
                 propertiesJson: propertiesJson,
+                geometryJson: geometryJson,
                 authorMembershipId: authorMembershipId,
                 createdAt: createdAt,
                 deletedAt: deletedAt,
@@ -1476,6 +1551,7 @@ class $$LocalObjectsTableTableManager
                 required double lat,
                 required double lng,
                 required String propertiesJson,
+                Value<String?> geometryJson = const Value.absent(),
                 required String authorMembershipId,
                 required DateTime createdAt,
                 Value<DateTime?> deletedAt = const Value.absent(),
@@ -1489,6 +1565,7 @@ class $$LocalObjectsTableTableManager
                 lat: lat,
                 lng: lng,
                 propertiesJson: propertiesJson,
+                geometryJson: geometryJson,
                 authorMembershipId: authorMembershipId,
                 createdAt: createdAt,
                 deletedAt: deletedAt,
