@@ -1,0 +1,16 @@
+{
+  "version": 8,
+  "name": "plan-ign",
+  "sources": {
+    "plan-ign": {
+      "type": "raster",
+      "tiles": ["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image%2Fpng&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],
+      "tileSize": 256,
+      "maxzoom": 19,
+      "attribution": "© IGN — Géoplateforme"
+    }
+  },
+  "layers": [
+    { "id": "plan-ign-layer", "type": "raster", "source": "plan-ign" }
+  ]
+}

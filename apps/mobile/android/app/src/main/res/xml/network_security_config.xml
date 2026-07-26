@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Autorise le HTTP en clair UNIQUEMENT vers la machine de dev
+     (10.0.2.2 = localhost du PC vu depuis l'émulateur Android).
+     Tout le reste (Supabase, tuiles IGN/OSM, API de prod) reste en HTTPS. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

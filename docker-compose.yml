@@ -1,0 +1,23 @@
+# Infrastructure de développement — nécessite Docker Desktop.
+# Démarrage :  docker compose up -d
+# La base est PostgreSQL 16 + PostGIS (requêtes géospatiales : perk drone, zones de jeu…).
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: carto-airsoft-db
+    environment:
+      POSTGRES_USER: carto
+      POSTGRES_PASSWORD: carto_dev_only
+      POSTGRES_DB: carto_airsoft
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carto -d carto_airsoft"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  db_data:

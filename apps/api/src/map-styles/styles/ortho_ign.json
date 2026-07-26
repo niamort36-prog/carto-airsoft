@@ -1,0 +1,16 @@
+{
+  "version": 8,
+  "name": "ortho-ign",
+  "sources": {
+    "ortho-ign": {
+      "type": "raster",
+      "tiles": ["https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM&FORMAT=image%2Fjpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}"],
+      "tileSize": 256,
+      "maxzoom": 19,
+      "attribution": "© IGN — Géoplateforme"
+    }
+  },
+  "layers": [
+    { "id": "ortho-ign-layer", "type": "raster", "source": "ortho-ign" }
+  ]
+}

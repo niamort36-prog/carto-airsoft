@@ -1,0 +1,226 @@
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { and, eq, isNull } from 'drizzle-orm';
+import type { AuthenticatedUser } from '../auth/supabase-auth.guard';
+import { DRIZZLE, type Database } from '../db/db.module';
+import {
+  games,
+  memberships,
+  users,
+  type Game,
+  type Membership,
+} from '../db/schema';
+import { UsersService } from '../users/users.service';
+import type { LifeStatus } from './dto';
+
+/** Vue « membre » diffusée aux autres joueurs de la partie. */
+export interface MemberView {
+  membershipId: string;
+  pseudo: string | null;
+  email: string | null;
+  role: string;
+  lifeStatus: string;
+  lastPosition: { x: number; y: number } | null;
+  lastPositionAt: Date | null;
+  isConnected: boolean;
+  lastSeenAt: Date | null;
+}
+
+/** Événement interne émis à chaque changement d'un membre (position, statut, connexion). */
+export const MEMBER_UPDATED_EVENT = 'member.updated';
+export interface MemberUpdatedEvent {
+  gameId: string;
+  member: MemberView;
+}
+
+@Injectable()
+export class GamesService {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Database,
+    private readonly usersService: UsersService,
+    private readonly events: EventEmitter2,
+  ) {}
+
+  /** La partie est créée et détenue par le serveur (§2.5). */
+  async createGame(auth: AuthenticatedUser, name: string): Promise<Game> {
+    const user = await this.usersService.getOrCreate(auth);
+    return this.db.transaction(async (tx) => {
+      const [game] = await tx
+        .insert(games)
+        .values({ name, ownerUserId: user.id })
+        .returning();
+      await tx
+        .insert(memberships)
+        .values({ gameId: game.id, userId: user.id, role: 'orga' });
+      return game;
+    });
+  }
+
+  async listMyGames(
+    auth: AuthenticatedUser,
+  ): Promise<Array<{ game: Game; role: string }>> {
+    const user = await this.usersService.getOrCreate(auth);
+    return this.db
+      .select({ game: games, role: memberships.role })
+      .from(memberships)
+      .innerJoin(games, eq(memberships.gameId, games.id))
+      .where(
+        and(
+          eq(memberships.userId, user.id),
+          isNull(memberships.leftAt),
+          isNull(memberships.kickedAt),
+        ),
+      );
+  }
+
+  /**
+   * Rejoindre en mode dev (Phase 3 : jetons QR opaques §7.2).
+   * Idempotent ; un joueur exclu (kickedAt) ne peut pas revenir seul.
+   */
+  async joinGame(auth: AuthenticatedUser, gameId: string): Promise<Membership> {
+    const user = await this.usersService.getOrCreate(auth);
+    const [game] = await this.db
+      .select()
+      .from(games)
+      .where(eq(games.id, gameId));
+    if (!game) throw new NotFoundException('Partie introuvable');
+
+    const [membership] = await this.db
+      .insert(memberships)
+      .values({ gameId, userId: user.id })
+      .onConflictDoUpdate({
+        target: [memberships.gameId, memberships.userId],
+        set: { leftAt: null },
+      })
+      .returning();
+    if (membership.kickedAt) {
+      throw new ForbiddenException('Vous avez été exclu de cette partie');
+    }
+    return membership;
+  }
+
+  async getMembers(
+    auth: AuthenticatedUser,
+    gameId: string,
+  ): Promise<MemberView[]> {
+    const user = await this.usersService.getOrCreate(auth);
+    await this.assertActiveMember(user.id, gameId);
+    return this.selectMembers(gameId);
+  }
+
+  async updateMyStatus(
+    auth: AuthenticatedUser,
+    gameId: string,
+    lifeStatus: LifeStatus,
+  ): Promise<MemberView> {
+    const user = await this.usersService.getOrCreate(auth);
+    const membership = await this.assertActiveMember(user.id, gameId);
+    await this.db
+      .update(memberships)
+      .set({ lifeStatus })
+      .where(eq(memberships.id, membership.id));
+    return this.emitMemberUpdate(gameId, membership.id);
+  }
+
+  /** Appelé par la gateway temps réel à chaque position reçue. */
+  async updatePosition(
+    membershipId: string,
+    gameId: string,
+    lng: number,
+    lat: number,
+  ): Promise<void> {
+    await this.db
+      .update(memberships)
+      .set({
+        lastPosition: { x: lng, y: lat },
+        lastPositionAt: new Date(),
+      })
+      .where(eq(memberships.id, membershipId));
+    await this.emitMemberUpdate(gameId, membershipId);
+  }
+
+  /** Appelé par la gateway : membre ≠ connecté (§2.4), on ne supprime rien. */
+  async setConnected(
+    membershipId: string,
+    gameId: string,
+    connected: boolean,
+  ): Promise<void> {
+    await this.db
+      .update(memberships)
+      .set({ isConnected: connected, lastSeenAt: new Date() })
+      .where(eq(memberships.id, membershipId));
+    await this.emitMemberUpdate(gameId, membershipId);
+  }
+
+  /** Résout l'appartenance active d'un utilisateur (pour la gateway). */
+  async findActiveMembership(
+    auth: AuthenticatedUser,
+    gameId: string,
+  ): Promise<Membership> {
+    const user = await this.usersService.getOrCreate(auth);
+    return this.assertActiveMember(user.id, gameId);
+  }
+
+  private async assertActiveMember(
+    userId: string,
+    gameId: string,
+  ): Promise<Membership> {
+    const [membership] = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.gameId, gameId),
+          eq(memberships.userId, userId),
+          isNull(memberships.leftAt),
+          isNull(memberships.kickedAt),
+        ),
+      );
+    if (!membership) {
+      throw new ForbiddenException('Vous n’êtes pas membre de cette partie');
+    }
+    return membership;
+  }
+
+  private async selectMembers(gameId: string): Promise<MemberView[]> {
+    return this.db
+      .select({
+        membershipId: memberships.id,
+        pseudo: users.pseudo,
+        email: users.email,
+        role: memberships.role,
+        lifeStatus: memberships.lifeStatus,
+        lastPosition: memberships.lastPosition,
+        lastPositionAt: memberships.lastPositionAt,
+        isConnected: memberships.isConnected,
+        lastSeenAt: memberships.lastSeenAt,
+      })
+      .from(memberships)
+      .innerJoin(users, eq(memberships.userId, users.id))
+      .where(
+        and(
+          eq(memberships.gameId, gameId),
+          isNull(memberships.leftAt),
+          isNull(memberships.kickedAt),
+        ),
+      );
+  }
+
+  private async emitMemberUpdate(
+    gameId: string,
+    membershipId: string,
+  ): Promise<MemberView> {
+    const members = await this.selectMembers(gameId);
+    const member = members.find((m) => m.membershipId === membershipId);
+    if (member) {
+      const event: MemberUpdatedEvent = { gameId, member };
+      this.events.emit(MEMBER_UPDATED_EVENT, event);
+    }
+    return member!;
+  }
+}
