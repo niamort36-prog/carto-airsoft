@@ -77,7 +77,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Jalon 4 : cache offline des tuiles — validé en mode avion (téléchargement de zone, redémarrage complet sans réseau)
   - [x] Jalon 5 : parties hébergées serveur (`games`, `memberships`) + rejoindre + statuts de vie
   - [x] Jalon 6 : temps réel Socket.IO — alliés sur la carte, statuts, « hors ligne » sans éjection (§2.4)
-- [ ] **Phase 2 — Tactique de base** *(en cours)*
+- [x] **Phase 2 — Tactique de base** *(terminée le 2026-07-26)*
   - [x] Pack d'icônes d'unités intégré (13 types × 4 affiliations APP-6, fourni par le propriétaire)
   - [x] Marqueurs tactiques : pose par appui long, rendu par icônes, temps réel, suppression (auteur/ORGA), serveur arbitre
   - [x] Côté serveur §7.6 : id client (idempotence), delta `sync?since=`, tombstones — validé par E2E
@@ -88,7 +88,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Dessin de zones et de lignes — mode dessin (sommets au tap), validation ligne/zone, rendu remplissage+contour, tap pour la fiche, offline-first par la même file
   - [x] Insigne réservé aux gradés : un sans-grade le reçoit de sa hiérarchie
   - [x] Messagerie intégrée — canaux Général (tous) et Commandement (gradés), cloisonnement serveur y compris en diffusion temps réel, envoi offline avec file rejouée automatiquement à la reconnexion
-  - [ ] Service Android premier plan (GPS écran éteint)
+  - [x] Service Android de premier plan — GPS actif écran éteint (validé : position reçue par le serveur avec l'écran en veille), notification persistante, sélecteur de cadence Précis/Équilibré/Éco (§9)
 - [ ] Phase 3 — Parties & rôles (QR, permissions, console web)
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)

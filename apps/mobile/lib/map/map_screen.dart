@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:uuid/uuid.dart';
 
 import '../game/chat_screen.dart';
@@ -13,6 +14,7 @@ import '../game/game_realtime.dart';
 import '../game/games_api.dart';
 import '../game/models.dart';
 import '../game/object_sync.dart';
+import '../game/tracking_mode.dart';
 import '../offline/offline_sheet.dart';
 import 'map_styles.dart';
 import 'unit_icons.dart';
@@ -70,6 +72,7 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription<Position>? _positionSub;
   Timer? _heartbeat;
   Position? _lastPosition;
+  TrackingMode _trackingMode = TrackingMode.balanced;
 
   /// Mode dessin (§ Phase 2) : chaque tap ajoute un sommet.
   bool _drawing = false;
@@ -223,29 +226,8 @@ class _MapScreenState extends State<MapScreen> {
     }
     if (mounted) setState(() => _locationGranted = true);
 
-    if (_inGame && _positionSub == null) {
-      // Envoi de sa position tant que l'écran est ouvert. Le suivi écran
-      // éteint (service de premier plan Android, §9) est un jalon dédié.
-      _positionSub = Geolocator.getPositionStream(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          distanceFilter: 5,
-        ),
-      ).listen(
-        (pos) {
-          _lastPosition = pos;
-          _realtime?.sendPosition(pos.latitude, pos.longitude);
-          _refreshAllies(); // met aussi à jour mon insigne sur la carte
-        },
-        onError: (_) {},
-      );
-      // Réémission périodique : à l'arrêt le flux GPS ne produit rien, or les
-      // alliés doivent voir une position fraîche (et non « il y a 12 min »).
-      // 10 s = compromis batterie/précision (§9), réglable par partie plus tard.
-      _heartbeat ??= Timer.periodic(const Duration(seconds: 10), (_) {
-        final p = _lastPosition;
-        if (p != null) _realtime?.sendPosition(p.latitude, p.longitude);
-      });
+    if (_inGame) {
+      await _startTracking();
     }
 
     try {
@@ -259,6 +241,86 @@ class _MapScreenState extends State<MapScreen> {
     } catch (_) {
       // Pas de fix GPS (intérieur…) : on reste sur la vue courante.
     }
+  }
+
+  /// Démarre (ou redémarre) le suivi de position avec le service de premier
+  /// plan Android : la notification persistante garde l'app vivante écran
+  /// éteint (§9), sinon les alliés voient une position figée.
+  Future<void> _startTracking() async {
+    await _positionSub?.cancel();
+    _heartbeat?.cancel();
+
+    // Android 13+ : sans cette autorisation la notification du service est
+    // masquée — or c'est elle qui rend le suivi visible et fiable (§9).
+    if (await Permission.notification.isDenied) {
+      await Permission.notification.request();
+    }
+
+    _positionSub = Geolocator.getPositionStream(
+      locationSettings: _trackingMode.toLocationSettings(),
+    ).listen(
+      (pos) {
+        _lastPosition = pos;
+        _realtime?.sendPosition(pos.latitude, pos.longitude);
+        _refreshAllies(); // met aussi à jour mon insigne sur la carte
+      },
+      onError: (_) {},
+    );
+    // Réémission périodique : à l'arrêt le flux GPS ne produit rien, or les
+    // alliés doivent voir une position fraîche (et non « il y a 12 min »).
+    _heartbeat = Timer.periodic(
+      Duration(seconds: _trackingMode.intervalSeconds),
+      (_) {
+        final p = _lastPosition;
+        if (p != null) _realtime?.sendPosition(p.latitude, p.longitude);
+      },
+    );
+  }
+
+  /// Choix du compromis batterie/précision (§9), appliqué immédiatement.
+  Future<void> _pickTrackingMode() async {
+    final chosen = await showModalBottomSheet<TrackingMode>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Text(
+                'Suivi de position',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'Le GPS continu est le premier poste de batterie. '
+                'Le suivi reste actif écran éteint tant que la notification '
+                'est présente.',
+              ),
+            ),
+            for (final mode in TrackingMode.values)
+              ListTile(
+                leading: Icon(
+                  mode == _trackingMode
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(mode.label),
+                subtitle: Text(mode.hint),
+                onTap: () => Navigator.pop(sheetContext, mode),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (chosen == null || chosen == _trackingMode) return;
+    setState(() => _trackingMode = chosen);
+    await _startTracking();
+    _showSnack('Suivi : ${chosen.label} (${chosen.hint})');
   }
 
   /// Liste des alliés : qui est là, dans quel état, à quand remonte sa position.
@@ -1115,10 +1177,28 @@ class _MapScreenState extends State<MapScreen> {
       // Remonté au-dessus des sélecteurs du bas.
       floatingActionButton: Padding(
         padding: EdgeInsets.only(bottom: _inGame ? 104 : 56),
-        child: FloatingActionButton(
-          tooltip: 'Ma position',
-          onPressed: _requestLocation,
-          child: const Icon(Icons.my_location),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_inGame)
+              FloatingActionButton.small(
+                heroTag: 'tracking',
+                tooltip: 'Suivi de position (batterie)',
+                onPressed: _pickTrackingMode,
+                child: Icon(switch (_trackingMode) {
+                  TrackingMode.precise => Icons.battery_alert,
+                  TrackingMode.balanced => Icons.battery_5_bar,
+                  TrackingMode.eco => Icons.battery_saver,
+                }),
+              ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'locate',
+              tooltip: 'Ma position',
+              onPressed: _requestLocation,
+              child: const Icon(Icons.my_location),
+            ),
+          ],
         ),
       ),
     );

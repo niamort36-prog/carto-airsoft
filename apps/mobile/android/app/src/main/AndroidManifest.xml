@@ -1,10 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Réseau : tuiles de carte, auth Supabase, API arbitre. -->
     <uses-permission android:name="android.permission.INTERNET"/>
-    <!-- Position du joueur sur la carte (Phase 1). Le suivi en arrière-plan
-         (service de premier plan, §9) arrivera au jalon 5. -->
+    <!-- Position du joueur sur la carte. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <!-- Suivi écran éteint (§9) : service de premier plan + notification
+         persistante. Sans lui, les constructeurs gèlent l'app en veille
+         (cf. dontkillmyapp.com) et la position des alliés se fige. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application
         android:networkSecurityConfig="@xml/network_security_config"
         android:label="Carto Airsoft"
