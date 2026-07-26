@@ -83,7 +83,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Côté serveur §7.6 : id client (idempotence), delta `sync?since=`, tombstones — validé par E2E
   - [x] Hiérarchie §5 jouable : créateur = commandant (insigne command), nomination capitaine/chef d'escouade, insignes modifiables sur rangs inférieurs, liste triée par grade
   - [x] Alliés rendus avec leur insigne d'unité + pastille de statut ; heure de pose sous les marqueurs
-  - [ ] File offline locale des marqueurs (outbox Drift) + réconciliation à la reconnexion
+  - [x] File offline locale (Drift) — validée en mode avion le 2026-07-26 : pose hors ligne (translucide « en attente »), survie au redémarrage complet, liste des parties en cache, envoi automatique à la reconnexion, réconciliation par delta
   - [ ] Dessin de zones et de lignes
   - [ ] Messagerie intégrée (global/équipe/escouade)
   - [ ] Service Android premier plan (GPS écran éteint)

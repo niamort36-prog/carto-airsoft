@@ -71,6 +71,7 @@ class MapObjectView {
     required this.authorMembershipId,
     required this.createdAt,
     required this.deletedAt,
+    this.pending = false,
   });
 
   final String id;
@@ -82,6 +83,9 @@ class MapObjectView {
   final String authorMembershipId;
   final DateTime createdAt;
   final DateTime? deletedAt;
+
+  /// true = pas encore accepté par le serveur (« en attente de synchro »).
+  final bool pending;
 
   String? get icon => properties['icon'] as String?;
   String? get label => properties['label'] as String?;

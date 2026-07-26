@@ -1,6 +1,8 @@
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../db/local_db.dart';
 import '../map/map_screen.dart';
 import 'games_api.dart';
 import 'models.dart';
@@ -16,15 +18,43 @@ class GamesScreen extends StatefulWidget {
 
 class _GamesScreenState extends State<GamesScreen> {
   late Future<List<GameSummary>> _games;
+  bool _fromCache = false;
 
   @override
   void initState() {
     super.initState();
-    _games = GamesApi.myGames();
+    _games = _load();
+  }
+
+  /// Serveur d'abord (et mise en cache), cache local sinon : l'accueil
+  /// doit fonctionner en pleine forêt (§2.3).
+  Future<List<GameSummary>> _load() async {
+    try {
+      final games = await GamesApi.myGames();
+      await LocalDb.instance.saveGames([
+        for (final g in games)
+          LocalGamesCompanion(
+            id: Value(g.id),
+            name: Value(g.name),
+            status: Value(g.status),
+            role: Value(g.role),
+          ),
+      ]);
+      _fromCache = false;
+      return games;
+    } catch (_) {
+      final cached = await LocalDb.instance.cachedGames();
+      if (cached.isEmpty) rethrow;
+      _fromCache = true;
+      return [
+        for (final g in cached)
+          GameSummary(id: g.id, name: g.name, status: g.status, role: g.role),
+      ];
+    }
   }
 
   void _reload() {
-    setState(() => _games = GamesApi.myGames());
+    setState(() => _games = _load());
   }
 
   Future<void> _createGame() async {
@@ -182,9 +212,21 @@ class _GamesScreenState extends State<GamesScreen> {
               );
             }
             return ListView.builder(
-              itemCount: games.length,
+              itemCount: games.length + (_fromCache ? 1 : 0),
               itemBuilder: (context, i) {
-                final g = games[i];
+                if (_fromCache && i == 0) {
+                  return Container(
+                    color: Colors.orange.shade900,
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    child: const Text(
+                      'Hors ligne — liste en cache',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  );
+                }
+                final g = games[i - (_fromCache ? 1 : 0)];
                 return ListTile(
                   leading: Icon(
                     g.role == 'commandant' ? Icons.star : Icons.person,

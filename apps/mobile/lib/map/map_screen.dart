@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../game/game_realtime.dart';
 import '../game/games_api.dart';
 import '../game/models.dart';
+import '../game/object_sync.dart';
 import '../offline/offline_sheet.dart';
 import 'map_styles.dart';
 import 'unit_icons.dart';
@@ -40,6 +41,7 @@ class _MapScreenState extends State<MapScreen> {
   bool _locationGranted = false;
 
   GameRealtime? _realtime;
+  ObjectSyncService? _syncService;
   bool _realtimeConnected = false;
   final Map<String, MemberView> _members = {};
   final Map<String, MapObjectView> _objects = {};
@@ -63,35 +65,58 @@ class _MapScreenState extends State<MapScreen> {
     _loadStyle();
     _requestLocation();
     if (_inGame) {
+      _syncService = ObjectSyncService(widget.gameId!);
       _realtime = GameRealtime(
         gameId: widget.gameId!,
         onSnapshot: _onSnapshot,
         onMemberUpdate: _onMemberUpdate,
-        onObjectUpsert: _onObjectUpsert,
+        onObjectUpsert: _onRemoteObjectUpsert,
         onConnectionChanged: (connected) {
           if (mounted) setState(() => _realtimeConnected = connected);
+          // Retour du réseau → vidage de la file + delta (§7.6).
+          if (connected) _kickSync();
         },
       )..connect();
       _loadObjects();
     }
   }
 
-  /// Chargement initial des marqueurs de la partie (le flux WebSocket prend
-  /// le relais ensuite). La file offline locale (§7.6) viendra avec Drift.
+  /// Affichage depuis la base LOCALE d'abord (fonctionne en pleine forêt),
+  /// puis tentative de synchro — jamais l'inverse (§2.3).
   Future<void> _loadObjects() async {
-    try {
-      final res = await GamesApi.syncObjects(widget.gameId!);
+    final local = await _syncService!.loadLocal();
+    if (!mounted) return;
+    for (final o in local) {
+      _applyObject(o, refresh: false);
+    }
+    _refreshMarkers();
+    _kickSync();
+  }
+
+  /// Pousse la file d'attente puis tire le delta ; rafraîchit l'affichage
+  /// (les marqueurs « en attente » redeviennent opaques une fois acceptés).
+  Future<void> _kickSync() async {
+    final sync = _syncService;
+    if (sync == null) return;
+    final ok = await sync.trySync();
+    if (ok && mounted) {
+      final local = await sync.loadLocal();
       if (!mounted) return;
-      for (final o in res.objects) {
-        _onObjectUpsert(o, refresh: false);
+      _objects.clear();
+      for (final o in local) {
+        _applyObject(o, refresh: false);
       }
       _refreshMarkers();
-    } catch (_) {
-      // Hors ligne : les marqueurs arriveront à la reconnexion.
     }
   }
 
-  void _onObjectUpsert(MapObjectView object, {bool refresh = true}) {
+  /// Objet reçu du serveur (WebSocket) : persisté localement puis affiché.
+  void _onRemoteObjectUpsert(MapObjectView object) {
+    _syncService?.saveLocal(object, pending: false);
+    _applyObject(object);
+  }
+
+  void _applyObject(MapObjectView object, {bool refresh = true}) {
     if (object.isDeleted) {
       _objects.remove(object.id);
     } else {
@@ -429,6 +454,7 @@ class _MapScreenState extends State<MapScreen> {
           iconImage: ['get', 'icon'],
           iconSize: 0.16,
           iconAllowOverlap: true,
+          iconOpacity: ['get', 'opacity'],
           textField: ['get', 'time'],
           textFont: ['Open Sans Semibold'],
           textSize: 11,
@@ -439,6 +465,7 @@ class _MapScreenState extends State<MapScreen> {
           textHaloWidth: 1.2,
           textAllowOverlap: true,
           textOptional: true,
+          textOpacity: ['get', 'opacity'],
         ),
       );
       // Alliés : insigne d'unité (bleu APP-6) + pastille de statut dessous.
@@ -495,6 +522,8 @@ class _MapScreenState extends State<MapScreen> {
                 'icon': o.icon ?? 'infantry_unknown',
                 // Heure de POSE (horloge de l'auteur, §7.6) — pas de réception.
                 'time': _timeLabel(o.createdAt),
+                // Translucide tant que le serveur n'a pas accepté l'objet.
+                'opacity': o.pending ? 0.55 : 1.0,
               },
             },
         ],
@@ -562,41 +591,15 @@ class _MapScreenState extends State<MapScreen> {
       authorMembershipId: _myMembershipId ?? '',
       createdAt: DateTime.now(),
       deletedAt: null,
+      pending: true,
     );
-    // Affichage immédiat pour l'auteur, puis envoi au serveur qui rediffuse.
-    _onObjectUpsert(object);
-    try {
-      await GamesApi.pushObjects(widget.gameId!, [_toDto(object)]);
-    } catch (_) {
-      _onObjectUpsert(MapObjectView(
-        id: object.id,
-        kind: object.kind,
-        markerType: object.markerType,
-        lat: object.lat,
-        lng: object.lng,
-        properties: object.properties,
-        authorMembershipId: object.authorMembershipId,
-        createdAt: object.createdAt,
-        deletedAt: DateTime.now(),
-      ));
-      _showSnack(
-        'Pose impossible hors connexion — la file d’attente offline arrive '
-        'à la prochaine étape.',
-        isError: true,
-      );
-    }
+    // Offline-first (§7.6) : enregistré localement et affiché IMMÉDIATEMENT
+    // (translucide = en attente), puis la file part vers le serveur dès que
+    // le réseau le permet. Jamais d'erreur, jamais de perte.
+    await _syncService!.saveLocal(object, pending: true);
+    _applyObject(object);
+    _kickSync();
   }
-
-  Map<String, dynamic> _toDto(MapObjectView o, {bool deleted = false}) => {
-        'id': o.id,
-        'kind': o.kind,
-        'markerType': o.markerType,
-        'lat': o.lat,
-        'lng': o.lng,
-        'properties': o.properties,
-        'createdAt': o.createdAt.toUtc().toIso8601String(),
-        if (deleted) 'deleted': true,
-      };
 
   /// Tap sur un marqueur : détail + suppression (auteur ou ORGA).
   void _onFeatureTap(
@@ -638,18 +641,22 @@ class _MapScreenState extends State<MapScreen> {
                   icon: const Icon(Icons.delete_outline),
                   onPressed: () async {
                     Navigator.pop(sheetContext);
-                    _objects.remove(object.id);
-                    _refreshMarkers();
-                    try {
-                      await GamesApi.pushObjects(
-                        widget.gameId!,
-                        [_toDto(object, deleted: true)],
-                      );
-                    } catch (_) {
-                      _onObjectUpsert(object);
-                      _showSnack('Suppression impossible hors connexion.',
-                          isError: true);
-                    }
+                    // Tombstone local en attente : part à la reconnexion.
+                    final deleted = MapObjectView(
+                      id: object.id,
+                      kind: object.kind,
+                      markerType: object.markerType,
+                      lat: object.lat,
+                      lng: object.lng,
+                      properties: object.properties,
+                      authorMembershipId: object.authorMembershipId,
+                      createdAt: object.createdAt,
+                      deletedAt: DateTime.now(),
+                      pending: true,
+                    );
+                    await _syncService!.saveLocal(deleted, pending: true);
+                    _applyObject(deleted);
+                    _kickSync();
                   },
                 )
               : null,
