@@ -46,6 +46,24 @@ class GamesApi {
     _ensureOk(res);
   }
 
+  /// Nomination (commandant) ou changement d'insigne (gradés) — validé serveur.
+  static Future<void> updateMember(
+    String gameId,
+    String membershipId, {
+    String? role,
+    String? unitType,
+  }) async {
+    final res = await http.patch(
+      _uri('/games/$gameId/members/$membershipId'),
+      headers: _headers(),
+      body: jsonEncode({
+        'role': ?role,
+        'unitType': ?unitType,
+      }),
+    );
+    _ensureOk(res);
+  }
+
   /// Pousse un lot d'objets carte — idempotent sur l'id client (§7.6).
   static Future<List<MapObjectView>> pushObjects(
     String gameId,

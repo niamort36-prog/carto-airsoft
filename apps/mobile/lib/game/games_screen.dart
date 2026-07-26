@@ -187,11 +187,10 @@ class _GamesScreenState extends State<GamesScreen> {
                 final g = games[i];
                 return ListTile(
                   leading: Icon(
-                    g.role == 'orga' ? Icons.star : Icons.person,
+                    g.role == 'commandant' ? Icons.star : Icons.person,
                   ),
                   title: Text(g.name),
-                  subtitle: Text(
-                      '${g.role == 'orga' ? 'ORGA' : 'Joueur'} · ${g.status}'),
+                  subtitle: Text('${roleLabel(g.role)} · ${g.status}'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => _openMap(game: g),
                   onLongPress: () {

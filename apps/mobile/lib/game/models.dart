@@ -1,5 +1,22 @@
 // Modèles côté client des réponses de l'API (contrat OpenAPI).
 
+/// Hiérarchie §5 — plus le rang est petit, plus le grade est élevé.
+const Map<String, int> kRoleRanks = {
+  'commandant': 0,
+  'capitaine': 1,
+  'chef_escouade': 2,
+  'joueur': 3,
+};
+
+int roleRank(String role) => kRoleRanks[role] ?? 9;
+
+String roleLabel(String role) => switch (role) {
+      'commandant' => 'Commandant',
+      'capitaine' => 'Capitaine',
+      'chef_escouade' => 'Chef d’escouade',
+      _ => 'Joueur',
+    };
+
 class GameSummary {
   const GameSummary({
     required this.id,
@@ -92,6 +109,7 @@ class MemberView {
     required this.pseudo,
     required this.email,
     required this.role,
+    required this.unitType,
     required this.lifeStatus,
     required this.lat,
     required this.lng,
@@ -103,6 +121,9 @@ class MemberView {
   final String? pseudo;
   final String? email;
   final String role;
+
+  /// Insigne du joueur (type d'unité du pack d'icônes).
+  final String unitType;
   final LifeStatus lifeStatus;
   final double? lat;
   final double? lng;
@@ -119,6 +140,7 @@ class MemberView {
       pseudo: json['pseudo'] as String?,
       email: json['email'] as String?,
       role: json['role'] as String,
+      unitType: json['unitType'] as String? ?? 'infantry',
       lifeStatus: LifeStatus.fromWire(json['lifeStatus'] as String),
       // PostGIS : x = longitude, y = latitude.
       lng: (pos?['x'] as num?)?.toDouble(),

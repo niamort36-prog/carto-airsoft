@@ -81,6 +81,8 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Pack d'icônes d'unités intégré (13 types × 4 affiliations APP-6, fourni par le propriétaire)
   - [x] Marqueurs tactiques : pose par appui long, rendu par icônes, temps réel, suppression (auteur/ORGA), serveur arbitre
   - [x] Côté serveur §7.6 : id client (idempotence), delta `sync?since=`, tombstones — validé par E2E
+  - [x] Hiérarchie §5 jouable : créateur = commandant (insigne command), nomination capitaine/chef d'escouade, insignes modifiables sur rangs inférieurs, liste triée par grade
+  - [x] Alliés rendus avec leur insigne d'unité + pastille de statut ; heure de pose sous les marqueurs
   - [ ] File offline locale des marqueurs (outbox Drift) + réconciliation à la reconnexion
   - [ ] Dessin de zones et de lignes
   - [ ] Messagerie intégrée (global/équipe/escouade)

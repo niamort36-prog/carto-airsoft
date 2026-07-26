@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -16,7 +17,7 @@ import {
   type Membership,
 } from '../db/schema';
 import { UsersService } from '../users/users.service';
-import type { LifeStatus } from './dto';
+import { ROLE_RANK, type LifeStatus, type UpdateMemberDto } from './dto';
 
 /** Vue « membre » diffusée aux autres joueurs de la partie. */
 export interface MemberView {
@@ -24,6 +25,7 @@ export interface MemberView {
   pseudo: string | null;
   email: string | null;
   role: string;
+  unitType: string;
   lifeStatus: string;
   lastPosition: { x: number; y: number } | null;
   lastPositionAt: Date | null;
@@ -54,9 +56,13 @@ export class GamesService {
         .insert(games)
         .values({ name, ownerUserId: user.id })
         .returning();
-      await tx
-        .insert(memberships)
-        .values({ gameId: game.id, userId: user.id, role: 'orga' });
+      // Le créateur est le commandant (§5) ; son insigne par défaut aussi.
+      await tx.insert(memberships).values({
+        gameId: game.id,
+        userId: user.id,
+        role: 'commandant',
+        unitType: 'command',
+      });
       return game;
     });
   }
@@ -157,6 +163,65 @@ export class GamesService {
     await this.emitMemberUpdate(gameId, membershipId);
   }
 
+  /**
+   * Gestion d'un membre par un gradé (§5, version jouable) :
+   *  - nomination (capitaine / chef d'escouade / joueur) : commandant
+   *    uniquement, jamais sur lui-même ni sur un autre commandant ;
+   *  - insigne (icône d'unité) : tout gradé sur un rang STRICTEMENT
+   *    inférieur au sien.
+   * Validé serveur — le client n'émet qu'une intention (§2.1).
+   */
+  async updateMember(
+    auth: AuthenticatedUser,
+    gameId: string,
+    membershipId: string,
+    dto: UpdateMemberDto,
+  ): Promise<MemberView> {
+    if (dto.role == null && dto.unitType == null) {
+      throw new BadRequestException('Rien à modifier');
+    }
+    const user = await this.usersService.getOrCreate(auth);
+    const requester = await this.assertActiveMember(user.id, gameId);
+    const [target] = await this.db
+      .select()
+      .from(memberships)
+      .where(
+        and(
+          eq(memberships.id, membershipId),
+          eq(memberships.gameId, gameId),
+          isNull(memberships.leftAt),
+          isNull(memberships.kickedAt),
+        ),
+      );
+    if (!target) throw new NotFoundException('Membre introuvable');
+
+    const requesterRank = ROLE_RANK[requester.role] ?? 9;
+    const targetRank = ROLE_RANK[target.role] ?? 9;
+
+    if (dto.role != null) {
+      if (requester.role !== 'commandant') {
+        throw new ForbiddenException('Seul le commandant nomme les grades');
+      }
+      if (target.id === requester.id || target.role === 'commandant') {
+        throw new ForbiddenException('Le commandant ne peut pas être rétrogradé');
+      }
+    }
+    if (dto.unitType != null && requesterRank >= targetRank) {
+      throw new ForbiddenException(
+        'L’insigne ne se modifie que sur un rang inférieur au sien',
+      );
+    }
+
+    await this.db
+      .update(memberships)
+      .set({
+        ...(dto.role != null ? { role: dto.role } : {}),
+        ...(dto.unitType != null ? { unitType: dto.unitType } : {}),
+      })
+      .where(eq(memberships.id, target.id));
+    return this.emitMemberUpdate(gameId, target.id);
+  }
+
   /** Résout l'appartenance active d'un utilisateur (pour la gateway). */
   async findActiveMembership(
     auth: AuthenticatedUser,
@@ -188,12 +253,13 @@ export class GamesService {
   }
 
   private async selectMembers(gameId: string): Promise<MemberView[]> {
-    return this.db
+    const rows = await this.db
       .select({
         membershipId: memberships.id,
         pseudo: users.pseudo,
         email: users.email,
         role: memberships.role,
+        unitType: memberships.unitType,
         lifeStatus: memberships.lifeStatus,
         lastPosition: memberships.lastPosition,
         lastPositionAt: memberships.lastPositionAt,
@@ -209,6 +275,15 @@ export class GamesService {
           isNull(memberships.kickedAt),
         ),
       );
+    // Ordre hiérarchique descendant (§5) : commandant, capitaines,
+    // chefs d'escouade, joueurs — puis alphabétique.
+    return rows.sort((a, b) => {
+      const rank = (ROLE_RANK[a.role] ?? 9) - (ROLE_RANK[b.role] ?? 9);
+      if (rank !== 0) return rank;
+      return (a.pseudo ?? a.email ?? '').localeCompare(
+        b.pseudo ?? b.email ?? '',
+      );
+    });
   }
 
   private async emitMemberUpdate(

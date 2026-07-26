@@ -67,9 +67,19 @@ export const memberships = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id),
-    role: text('role', { enum: ['orga', 'player'] })
+    /**
+     * Hiérarchie §5 (version jouable ; la matrice complète arrive en
+     * Phase 3) : le créateur de la partie est commandant, il nomme les
+     * capitaines et chefs d'escouade. L'icône d'unité est l'insigne du
+     * joueur sur la carte, modifiable par les gradés sur les rangs
+     * strictement inférieurs.
+     */
+    role: text('role', {
+      enum: ['commandant', 'capitaine', 'chef_escouade', 'joueur'],
+    })
       .notNull()
-      .default('player'),
+      .default('joueur'),
+    unitType: text('unit_type').notNull().default('infantry'),
     lifeStatus: text('life_status', {
       enum: ['alive', 'dead', 'medic_needed', 'support'],
     })

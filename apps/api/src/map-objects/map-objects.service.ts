@@ -53,7 +53,9 @@ export class MapObjectsService {
       auth,
       gameId,
     );
-    const isOrga = membership.role === 'orga';
+    // Le commandant peut retirer les marqueurs de tous (ex-rôle ORGA,
+    // remplacé par la matrice de permissions en Phase 3).
+    const isOrga = membership.role === 'commandant';
     const results: MapObjectView[] = [];
 
     for (const dto of dtos) {

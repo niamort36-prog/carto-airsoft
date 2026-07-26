@@ -14,7 +14,7 @@ import {
   SupabaseAuthGuard,
   type AuthenticatedUser,
 } from '../auth/supabase-auth.guard';
-import { CreateGameDto, UpdateMyStatusDto } from './dto';
+import { CreateGameDto, UpdateMemberDto, UpdateMyStatusDto } from './dto';
 import { GamesService } from './games.service';
 
 @ApiTags('games')
@@ -62,5 +62,18 @@ export class GamesController {
     @Body() dto: UpdateMyStatusDto,
   ) {
     return this.gamesService.updateMyStatus(auth, gameId, dto.lifeStatus);
+  }
+
+  @Patch(':id/members/:membershipId')
+  @ApiOperation({
+    summary: 'Nommer un grade (commandant) ou changer un insigne (gradés, §5)',
+  })
+  updateMember(
+    @CurrentUser() auth: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) gameId: string,
+    @Param('membershipId', ParseUUIDPipe) membershipId: string,
+    @Body() dto: UpdateMemberDto,
+  ) {
+    return this.gamesService.updateMember(auth, gameId, membershipId, dto);
   }
 }

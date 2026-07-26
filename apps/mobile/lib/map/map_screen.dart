@@ -108,13 +108,15 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  /// Les alliés, hors soi-même, triés : connectés d'abord.
+  /// Les alliés, hors soi-même, en ordre hiérarchique descendant (§5) :
+  /// commandant, capitaines, chefs d'escouade, joueurs.
   List<MemberView> get _allies {
     final list = _members.values
         .where((m) => m.membershipId != _myMembershipId)
         .toList()
       ..sort((a, b) {
-        if (a.isConnected != b.isConnected) return a.isConnected ? -1 : 1;
+        final rank = roleRank(a.role) - roleRank(b.role);
+        if (rank != 0) return rank;
         return a.displayName.compareTo(b.displayName);
       });
     return list;
@@ -234,37 +236,7 @@ class _MapScreenState extends State<MapScreen> {
                     child: ListView(
                       shrinkWrap: true,
                       children: [
-                        for (final a in allies)
-                          ListTile(
-                            dense: true,
-                            leading: Icon(
-                              Icons.circle,
-                              size: 14,
-                              color: _statusColor(a.lifeStatus)
-                                  .withValues(alpha: a.isConnected ? 1 : 0.4),
-                            ),
-                            title: Text(a.displayName),
-                            subtitle: Text(
-                              '${a.lifeStatus.label} · '
-                              '${a.isConnected ? 'en ligne' : 'hors ligne'}'
-                              '${a.lat == null ? ' · position inconnue' : ''}',
-                            ),
-                            trailing: a.lat == null
-                                ? null
-                                : IconButton(
-                                    tooltip: 'Centrer',
-                                    icon: const Icon(Icons.center_focus_strong),
-                                    onPressed: () {
-                                      Navigator.pop(context);
-                                      _controller?.animateCamera(
-                                        CameraUpdate.newLatLngZoom(
-                                          LatLng(a.lat!, a.lng!),
-                                          15,
-                                        ),
-                                      );
-                                    },
-                                  ),
-                          ),
+                        for (final a in allies) _allyTile(a),
                       ],
                     ),
                   ),
@@ -282,6 +254,153 @@ class _MapScreenState extends State<MapScreen> {
         LifeStatus.medicNeeded => const Color(0xFFF44336),
         LifeStatus.support => const Color(0xFF2196F3),
       };
+
+  /// Ligne d'un allié : insigne, grade, statut — et pour les gradés, les
+  /// actions de commandement (le serveur revalide tout, §2.1).
+  Widget _allyTile(MemberView a) {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final myRank = me != null ? roleRank(me.role) : 9;
+    final canBadge = myRank < roleRank(a.role);
+    final canPromote = me?.role == 'commandant' && a.role != 'commandant';
+    return ListTile(
+      dense: true,
+      leading: Image.asset(
+        UnitIcons.assetKey('${a.unitType}_allied'),
+        width: 36,
+        height: 36,
+        fit: BoxFit.contain,
+        opacity: AlwaysStoppedAnimation(a.isConnected ? 1 : 0.4),
+      ),
+      title: Text(a.displayName),
+      subtitle: Text(
+        '${roleLabel(a.role)} · ${a.lifeStatus.label} · '
+        '${a.isConnected ? 'en ligne' : 'hors ligne'}'
+        '${a.lat == null ? ' · position inconnue' : ''}',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (a.lat != null)
+            IconButton(
+              tooltip: 'Centrer',
+              icon: const Icon(Icons.center_focus_strong),
+              onPressed: () {
+                Navigator.pop(context);
+                _controller?.animateCamera(
+                  CameraUpdate.newLatLngZoom(LatLng(a.lat!, a.lng!), 15),
+                );
+              },
+            ),
+          if (canBadge || canPromote)
+            PopupMenuButton<String>(
+              tooltip: 'Commandement',
+              icon: const Icon(Icons.military_tech),
+              onSelected: (action) => _commandAction(a, action),
+              itemBuilder: (_) => [
+                if (canBadge)
+                  const PopupMenuItem(
+                    value: 'badge',
+                    child: Text('Changer l’insigne'),
+                  ),
+                if (canPromote) ...[
+                  if (a.role != 'capitaine')
+                    const PopupMenuItem(
+                      value: 'role:capitaine',
+                      child: Text('Nommer capitaine'),
+                    ),
+                  if (a.role != 'chef_escouade')
+                    const PopupMenuItem(
+                      value: 'role:chef_escouade',
+                      child: Text('Nommer chef d’escouade'),
+                    ),
+                  if (a.role != 'joueur')
+                    const PopupMenuItem(
+                      value: 'role:joueur',
+                      child: Text('Rétrograder joueur'),
+                    ),
+                ],
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _commandAction(MemberView target, String action) async {
+    // Le panneau est fermé : il montre un instantané, la mise à jour
+    // arrivera par le flux member:update.
+    Navigator.pop(context);
+    try {
+      if (action == 'badge') {
+        final unitType = await _pickUnitType();
+        if (unitType == null) return;
+        await GamesApi.updateMember(
+          widget.gameId!,
+          target.membershipId,
+          unitType: unitType.slug,
+        );
+        _showSnack('Insigne de ${target.displayName} : ${unitType.label}');
+      } else if (action.startsWith('role:')) {
+        final role = action.substring('role:'.length);
+        await GamesApi.updateMember(
+          widget.gameId!,
+          target.membershipId,
+          role: role,
+        );
+        _showSnack('${target.displayName} : ${roleLabel(role)}');
+      }
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
+  }
+
+  /// Grille des 13 insignes alliés.
+  Future<UnitType?> _pickUnitType() {
+    return showDialog<UnitType>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Choisir l’insigne'),
+        content: SizedBox(
+          width: 320,
+          child: GridView.builder(
+            shrinkWrap: true,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 4,
+              mainAxisSpacing: 8,
+              crossAxisSpacing: 8,
+              childAspectRatio: 0.8,
+            ),
+            itemCount: UnitType.values.length,
+            itemBuilder: (context, i) {
+              final type = UnitType.values[i];
+              return InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () => Navigator.pop(dialogContext, type),
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Image.asset(
+                        UnitIcons.assetKey(
+                          UnitIcons.iconId(type, UnitAffiliation.allied),
+                        ),
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                    Text(
+                      type.label,
+                      style: Theme.of(context).textTheme.labelSmall,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
   /// (Re)crée la couche des alliés — appelé à chaque chargement de style,
   /// car un changement de fond repart d'un style vierge.
@@ -301,6 +420,8 @@ class _MapScreenState extends State<MapScreen> {
         await controller.addImage(iconId, bytes.buffer.asUint8List());
       }
       await controller.addGeoJsonSource(_markersSource, _markersGeoJson());
+      // Icône du marqueur + heure de pose en petit dessous (le style déclare
+      // un endpoint `glyphs` pour le texte ; mis en cache comme les tuiles).
       await controller.addSymbolLayer(
         _markersSource,
         _markersLayer,
@@ -308,19 +429,41 @@ class _MapScreenState extends State<MapScreen> {
           iconImage: ['get', 'icon'],
           iconSize: 0.16,
           iconAllowOverlap: true,
+          textField: ['get', 'time'],
+          textFont: ['Open Sans Semibold'],
+          textSize: 11,
+          textAnchor: 'top',
+          textOffset: [0, 1.9],
+          textColor: '#ffffff',
+          textHaloColor: '#000000',
+          textHaloWidth: 1.2,
+          textAllowOverlap: true,
+          textOptional: true,
         ),
       );
+      // Alliés : insigne d'unité (bleu APP-6) + pastille de statut dessous.
       await controller.addGeoJsonSource(_alliesSource, _alliesGeoJson());
       await controller.addCircleLayer(
         _alliesSource,
-        'allies-circles',
+        'allies-status',
         CircleLayerProperties(
-          circleRadius: 10,
+          circleRadius: 5,
           circleColor: ['get', 'color'],
           circleOpacity: ['get', 'opacity'],
-          circleStrokeWidth: 3,
+          circleStrokeWidth: 1.5,
           circleStrokeColor: '#ffffff',
           circleStrokeOpacity: ['get', 'opacity'],
+          circleTranslate: [0, 22],
+        ),
+      );
+      await controller.addSymbolLayer(
+        _alliesSource,
+        'allies-icons',
+        const SymbolLayerProperties(
+          iconImage: ['get', 'icon'],
+          iconSize: 0.13,
+          iconAllowOverlap: true,
+          iconOpacity: ['get', 'opacity'],
         ),
       );
       _styleReady = true;
@@ -329,6 +472,12 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       debugPrint('couches carte indisponibles: $e');
     }
+  }
+
+  static String _timeLabel(DateTime t) {
+    final local = t.toLocal();
+    return '${local.hour.toString().padLeft(2, '0')}h'
+        '${local.minute.toString().padLeft(2, '0')}';
   }
 
   Map<String, dynamic> _markersGeoJson() => {
@@ -344,6 +493,8 @@ class _MapScreenState extends State<MapScreen> {
               },
               'properties': {
                 'icon': o.icon ?? 'infantry_unknown',
+                // Heure de POSE (horloge de l'auteur, §7.6) — pas de réception.
+                'time': _timeLabel(o.createdAt),
               },
             },
         ],
@@ -368,6 +519,9 @@ class _MapScreenState extends State<MapScreen> {
         },
         'properties': {
           'name': m.displayName,
+          // Insigne d'unité (bleu allié) — défaut infanterie, command pour
+          // le commandant, modifiable par les gradés (§5).
+          'icon': '${m.unitType}_allied',
           'color':
               '#${_statusColor(m.lifeStatus).toARGB32().toRadixString(16).substring(2)}',
           // Estompé quand hors ligne (§2.4) : visible, mais visiblement daté.
@@ -457,7 +611,7 @@ class _MapScreenState extends State<MapScreen> {
     if (object == null) return;
     final me = _myMembershipId != null ? _members[_myMembershipId] : null;
     final canDelete = object.authorMembershipId == _myMembershipId ||
-        me?.role == 'orga';
+        me?.role == 'commandant';
     final author = _members[object.authorMembershipId];
     showModalBottomSheet<void>(
       context: context,

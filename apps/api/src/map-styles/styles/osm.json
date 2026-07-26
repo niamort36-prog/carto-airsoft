@@ -4,13 +4,20 @@
   "sources": {
     "osm": {
       "type": "raster",
-      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      "tiles": [
+        "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+      ],
       "tileSize": 256,
       "maxzoom": 19,
       "attribution": "© OpenStreetMap contributors"
     }
   },
   "layers": [
-    { "id": "osm-layer", "type": "raster", "source": "osm" }
-  ]
+    {
+      "id": "osm-layer",
+      "type": "raster",
+      "source": "osm"
+    }
+  ],
+  "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf"
 }
