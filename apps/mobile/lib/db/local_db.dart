@@ -38,6 +38,35 @@ class SyncCursors extends Table {
   Set<Column> get primaryKey => {gameId};
 }
 
+/// Messages en cache + file d'attente (§7.4 + §7.6) : un message écrit hors
+/// réseau part tout seul à la reconnexion, comme un marqueur.
+class LocalMessages extends Table {
+  TextColumn get id => text()();
+  TextColumn get gameId => text()();
+  TextColumn get channelId => text()();
+  TextColumn get body => text()();
+  TextColumn get authorMembershipId => text()();
+  TextColumn get authorName => text()();
+  DateTimeColumn get createdAt => dateTime()();
+  BoolColumn get pending => boolean().withDefault(const Constant(false))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Canaux en cache : ouvrir la messagerie hors réseau doit donner accès aux
+/// mêmes canaux que la dernière fois (le serveur reste seul juge des droits,
+/// il revalide à chaque envoi).
+class LocalChannels extends Table {
+  TextColumn get id => text()();
+  TextColumn get gameId => text()();
+  TextColumn get scope => text()();
+  TextColumn get name => text()();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Cache de « Mes parties » : l'accueil doit s'ouvrir en pleine forêt (§2.3)
 /// pour atteindre la carte et les marqueurs déjà en cache.
 class LocalGames extends Table {
@@ -50,14 +79,22 @@ class LocalGames extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [LocalObjects, SyncCursors, LocalGames])
+@DriftDatabase(
+  tables: [
+    LocalObjects,
+    SyncCursors,
+    LocalGames,
+    LocalMessages,
+    LocalChannels,
+  ],
+)
 class LocalDb extends _$LocalDb {
   LocalDb() : super(driftDatabase(name: 'carto_airsoft'));
 
   static final LocalDb instance = LocalDb();
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -68,8 +105,40 @@ class LocalDb extends _$LocalDb {
           if (from < 3) {
             await m.addColumn(localObjects, localObjects.geometryJson);
           }
+          if (from < 4) {
+            await m.createTable(localMessages);
+          }
+          if (from < 5) {
+            await m.createTable(localChannels);
+          }
         },
       );
+
+  Future<List<LocalChannel>> channelsForGame(String gameId) =>
+      (select(localChannels)..where((c) => c.gameId.equals(gameId))).get();
+
+  Future<void> saveChannels(
+    String gameId,
+    List<LocalChannelsCompanion> rows,
+  ) =>
+      batch((b) {
+        b.deleteWhere(localChannels, (c) => c.gameId.equals(gameId));
+        b.insertAll(localChannels, rows);
+      });
+
+  Future<List<LocalMessage>> messagesForChannel(String channelId) =>
+      (select(localMessages)
+            ..where((m) => m.channelId.equals(channelId))
+            ..orderBy([(m) => OrderingTerm(expression: m.createdAt)]))
+          .get();
+
+  Future<List<LocalMessage>> pendingMessages(String gameId) => (select(
+        localMessages,
+      )..where((m) => m.gameId.equals(gameId) & m.pending.equals(true)))
+          .get();
+
+  Future<void> upsertMessage(LocalMessagesCompanion row) =>
+      into(localMessages).insertOnConflictUpdate(row);
 
   Future<List<LocalGame>> cachedGames() => select(localGames).get();
 

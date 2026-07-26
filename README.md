@@ -87,7 +87,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] File offline locale (Drift) — validée en mode avion le 2026-07-26 : pose hors ligne (translucide « en attente »), survie au redémarrage complet, liste des parties en cache, envoi automatique à la reconnexion, réconciliation par delta
   - [x] Dessin de zones et de lignes — mode dessin (sommets au tap), validation ligne/zone, rendu remplissage+contour, tap pour la fiche, offline-first par la même file
   - [x] Insigne réservé aux gradés : un sans-grade le reçoit de sa hiérarchie
-  - [ ] Messagerie intégrée (global/équipe/escouade)
+  - [x] Messagerie intégrée — canaux Général (tous) et Commandement (gradés), cloisonnement serveur y compris en diffusion temps réel, envoi offline avec file rejouée automatiquement à la reconnexion
   - [ ] Service Android premier plan (GPS écran éteint)
 - [ ] Phase 3 — Parties & rôles (QR, permissions, console web)
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)

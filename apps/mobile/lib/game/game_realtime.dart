@@ -25,6 +25,13 @@ class GameRealtime {
   final void Function(bool connected) onConnectionChanged;
   final void Function(MapObjectView object)? onObjectUpsert;
 
+  /// Branché par l'écran de messagerie tant qu'il est ouvert (§7.4).
+  void Function(MessageView message)? onChatMessage;
+
+  /// Appelé à chaque (re)connexion réussie — sert à vider les files
+  /// d'attente sans attendre une action du joueur (§7.6).
+  void Function()? onReconnected;
+
   sio.Socket? _socket;
 
   void connect() {
@@ -50,6 +57,7 @@ class GameRealtime {
           ];
           onSnapshot(members, ack['membershipId'] as String);
           onConnectionChanged(true);
+          onReconnected?.call();
         } else {
           onConnectionChanged(false);
         }
@@ -66,6 +74,13 @@ class GameRealtime {
       if (data is Map) {
         onObjectUpsert
             ?.call(MapObjectView.fromJson(data.cast<String, dynamic>()));
+      }
+    });
+
+    socket.on('chat:message', (dynamic data) {
+      if (data is Map) {
+        onChatMessage
+            ?.call(MessageView.fromJson(data.cast<String, dynamic>()));
       }
     });
 

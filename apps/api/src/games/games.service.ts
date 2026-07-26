@@ -10,6 +10,7 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AuthenticatedUser } from '../auth/supabase-auth.guard';
 import { DRIZZLE, type Database } from '../db/db.module';
 import {
+  chatChannels,
   games,
   memberships,
   users,
@@ -63,6 +64,17 @@ export class GamesService {
         role: 'commandant',
         unitType: 'command',
       });
+      // Canaux de discussion (§7.4) : général pour tous, commandement
+      // réservé aux gradés (rang ≤ chef d'escouade).
+      await tx.insert(chatChannels).values([
+        { gameId: game.id, scope: 'global', name: 'Général' },
+        {
+          gameId: game.id,
+          scope: 'command',
+          name: 'Commandement',
+          minRoleRank: ROLE_RANK.chef_escouade,
+        },
+      ]);
       return game;
     });
   }

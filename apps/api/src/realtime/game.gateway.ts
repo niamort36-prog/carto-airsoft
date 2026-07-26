@@ -12,20 +12,25 @@ import {
 import type { Server, Socket } from 'socket.io';
 import type { AuthenticatedUser } from '../auth/supabase-token.service';
 import { SupabaseTokenService } from '../auth/supabase-token.service';
-import { LIFE_STATUSES, type LifeStatus } from './dto';
+import { LIFE_STATUSES, type LifeStatus } from '../games/dto';
 import {
   GamesService,
   MEMBER_UPDATED_EVENT,
   type MemberUpdatedEvent,
   type MemberView,
-} from './games.service';
+} from '../games/games.service';
 
-/** Événement émis par MapObjectsService — importé « par contrat » (pas de
+/** Événements émis par d'autres services — importés « par contrat » (pas de
  *  dépendance de module : la gateway ne fait que rediffuser). */
 import {
   OBJECT_UPDATED_EVENT,
   type ObjectUpdatedEvent,
 } from '../map-objects/map-objects.service';
+import {
+  ChatService,
+  MESSAGE_SENT_EVENT,
+  type MessageSentEvent,
+} from '../chat/chat.service';
 
 interface GameSocketData {
   user: AuthenticatedUser;
@@ -54,6 +59,7 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
   constructor(
     private readonly tokens: SupabaseTokenService,
     private readonly gamesService: GamesService,
+    private readonly chat: ChatService,
   ) {}
 
   /**
@@ -104,6 +110,13 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
       );
       client.data.memberships.set(gameId, membership.id);
       await client.join(`game:${gameId}`);
+      // Rooms des canaux autorisés par le grade (§7.4).
+      for (const channelId of await this.chat.accessibleChannelIds(
+        gameId,
+        membership.role,
+      )) {
+        await client.join(`channel:${channelId}`);
+      }
       await this.gamesService.setConnected(membership.id, gameId, true);
       const members = await this.gamesService.getMembers(
         client.data.user,
@@ -177,5 +190,17 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
     this.server
       .to(`game:${event.gameId}`)
       .emit('object:upsert', event.object);
+  }
+
+  /**
+   * Diffusion d'un message dans la room de SON canal uniquement : un joueur
+   * sans grade n'est pas dans la room du canal commandement, le message ne
+   * lui parvient donc jamais (§7.4, cloisonnement côté serveur).
+   */
+  @OnEvent(MESSAGE_SENT_EVENT)
+  onMessageSent(event: MessageSentEvent): void {
+    this.server
+      .to(`channel:${event.channelId}`)
+      .emit('chat:message', event.message);
   }
 }

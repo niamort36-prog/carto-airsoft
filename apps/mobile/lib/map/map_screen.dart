@@ -7,6 +7,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:uuid/uuid.dart';
 
+import '../game/chat_screen.dart';
+import '../game/chat_sync.dart';
 import '../game/game_realtime.dart';
 import '../game/games_api.dart';
 import '../game/models.dart';
@@ -182,6 +184,8 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _onSnapshot(List<MemberView> members, String myMembershipId) {
+    // Mémorisé pour l'usage hors réseau (messagerie, marqueurs).
+    ChatSyncService.rememberMembership(widget.gameId!, myMembershipId);
     if (!mounted) return;
     setState(() {
       _members
@@ -944,6 +948,20 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: Text(widget.gameName ?? 'Carte libre'),
         actions: [
+          if (_inGame)
+            IconButton(
+              tooltip: 'Messagerie',
+              icon: const Icon(Icons.forum_outlined),
+              onPressed: () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => ChatScreen(
+                    gameId: widget.gameId!,
+                    realtime: _realtime,
+                    myMembershipId: _myMembershipId,
+                  ),
+                ),
+              ),
+            ),
           if (_inGame)
             IconButton(
               tooltip: _drawing ? 'Quitter le dessin' : 'Dessiner zone/ligne',

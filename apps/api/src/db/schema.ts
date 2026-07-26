@@ -2,6 +2,7 @@ import {
   boolean,
   geometry,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -154,3 +155,61 @@ export const mapObjects = pgTable(
 );
 
 export type MapObject = typeof mapObjects.$inferSelect;
+
+/**
+ * Canaux de discussion (§7.4). Créés avec la partie :
+ *  - `global`  : tous les membres ;
+ *  - `command` : réservé aux gradés (cloisonnement par rang).
+ * Les canaux `team`/`squad` arriveront avec les escouades (Phase 3) —
+ * d'où `teamId`/`squadId` déjà prévus.
+ */
+export const chatChannels = pgTable('chat_channels', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  scope: text('scope', { enum: ['global', 'command', 'team', 'squad'] })
+    .notNull(),
+  name: text('name').notNull(),
+  teamId: uuid('team_id'),
+  squadId: uuid('squad_id'),
+  /** Rang maximal (inclus) requis pour lire/écrire ; null = tout le monde. */
+  minRoleRank: integer('min_role_rank'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type ChatChannel = typeof chatChannels.$inferSelect;
+
+/**
+ * Messages (§7.4) — mêmes règles offline-first que les objets carte (§7.6) :
+ * id généré côté client (idempotence), horodatage de l'auteur, `updatedAt`
+ * serveur comme curseur de synchro delta.
+ */
+export const messages = pgTable(
+  'messages',
+  {
+    id: uuid('id').primaryKey(),
+    channelId: uuid('channel_id')
+      .notNull()
+      .references(() => chatChannels.id),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    authorMembershipId: uuid('author_membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    body: text('body').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull(),
+    serverReceivedAt: timestamp('server_received_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('messages_channel_updated_idx').on(t.channelId, t.updatedAt)],
+);
+
+export type Message = typeof messages.$inferSelect;

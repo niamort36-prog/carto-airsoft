@@ -59,6 +59,57 @@ enum LifeStatus {
       );
 }
 
+/// Canal de discussion (§7.4) — la liste reçue est déjà filtrée par le
+/// serveur selon le grade.
+class ChannelView {
+  const ChannelView({
+    required this.id,
+    required this.scope,
+    required this.name,
+  });
+
+  final String id;
+  final String scope;
+  final String name;
+
+  factory ChannelView.fromJson(Map<String, dynamic> json) => ChannelView(
+        id: json['id'] as String,
+        scope: json['scope'] as String,
+        name: json['name'] as String,
+      );
+}
+
+class MessageView {
+  const MessageView({
+    required this.id,
+    required this.channelId,
+    required this.body,
+    required this.authorMembershipId,
+    required this.authorName,
+    required this.createdAt,
+    this.pending = false,
+  });
+
+  final String id;
+  final String channelId;
+  final String body;
+  final String authorMembershipId;
+  final String authorName;
+  final DateTime createdAt;
+
+  /// true = pas encore accepté par le serveur (« en attente d'envoi »).
+  final bool pending;
+
+  factory MessageView.fromJson(Map<String, dynamic> json) => MessageView(
+        id: json['id'] as String,
+        channelId: json['channelId'] as String,
+        body: json['body'] as String,
+        authorMembershipId: json['authorMembershipId'] as String,
+        authorName: json['authorName'] as String,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+      );
+}
+
 /// Objet tactique posé sur la carte (marqueur d'unité, waypoint…).
 class MapObjectView {
   const MapObjectView({

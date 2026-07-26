@@ -1239,12 +1239,837 @@ class LocalGamesCompanion extends UpdateCompanion<LocalGame> {
   }
 }
 
+class $LocalMessagesTable extends LocalMessages
+    with TableInfo<$LocalMessagesTable, LocalMessage> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalMessagesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+    'game_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _channelIdMeta = const VerificationMeta(
+    'channelId',
+  );
+  @override
+  late final GeneratedColumn<String> channelId = GeneratedColumn<String>(
+    'channel_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _bodyMeta = const VerificationMeta('body');
+  @override
+  late final GeneratedColumn<String> body = GeneratedColumn<String>(
+    'body',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _authorMembershipIdMeta =
+      const VerificationMeta('authorMembershipId');
+  @override
+  late final GeneratedColumn<String> authorMembershipId =
+      GeneratedColumn<String>(
+        'author_membership_id',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _authorNameMeta = const VerificationMeta(
+    'authorName',
+  );
+  @override
+  late final GeneratedColumn<String> authorName = GeneratedColumn<String>(
+    'author_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<DateTime> createdAt = GeneratedColumn<DateTime>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.dateTime,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _pendingMeta = const VerificationMeta(
+    'pending',
+  );
+  @override
+  late final GeneratedColumn<bool> pending = GeneratedColumn<bool>(
+    'pending',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("pending" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    gameId,
+    channelId,
+    body,
+    authorMembershipId,
+    authorName,
+    createdAt,
+    pending,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_messages';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalMessage> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(
+        _gameIdMeta,
+        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('channel_id')) {
+      context.handle(
+        _channelIdMeta,
+        channelId.isAcceptableOrUnknown(data['channel_id']!, _channelIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_channelIdMeta);
+    }
+    if (data.containsKey('body')) {
+      context.handle(
+        _bodyMeta,
+        body.isAcceptableOrUnknown(data['body']!, _bodyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_bodyMeta);
+    }
+    if (data.containsKey('author_membership_id')) {
+      context.handle(
+        _authorMembershipIdMeta,
+        authorMembershipId.isAcceptableOrUnknown(
+          data['author_membership_id']!,
+          _authorMembershipIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_authorMembershipIdMeta);
+    }
+    if (data.containsKey('author_name')) {
+      context.handle(
+        _authorNameMeta,
+        authorName.isAcceptableOrUnknown(data['author_name']!, _authorNameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_authorNameMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('pending')) {
+      context.handle(
+        _pendingMeta,
+        pending.isAcceptableOrUnknown(data['pending']!, _pendingMeta),
+      );
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalMessage map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalMessage(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      gameId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_id'],
+      )!,
+      channelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}channel_id'],
+      )!,
+      body: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}body'],
+      )!,
+      authorMembershipId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_membership_id'],
+      )!,
+      authorName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}author_name'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}created_at'],
+      )!,
+      pending: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}pending'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalMessagesTable createAlias(String alias) {
+    return $LocalMessagesTable(attachedDatabase, alias);
+  }
+}
+
+class LocalMessage extends DataClass implements Insertable<LocalMessage> {
+  final String id;
+  final String gameId;
+  final String channelId;
+  final String body;
+  final String authorMembershipId;
+  final String authorName;
+  final DateTime createdAt;
+  final bool pending;
+  const LocalMessage({
+    required this.id,
+    required this.gameId,
+    required this.channelId,
+    required this.body,
+    required this.authorMembershipId,
+    required this.authorName,
+    required this.createdAt,
+    required this.pending,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['channel_id'] = Variable<String>(channelId);
+    map['body'] = Variable<String>(body);
+    map['author_membership_id'] = Variable<String>(authorMembershipId);
+    map['author_name'] = Variable<String>(authorName);
+    map['created_at'] = Variable<DateTime>(createdAt);
+    map['pending'] = Variable<bool>(pending);
+    return map;
+  }
+
+  LocalMessagesCompanion toCompanion(bool nullToAbsent) {
+    return LocalMessagesCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      channelId: Value(channelId),
+      body: Value(body),
+      authorMembershipId: Value(authorMembershipId),
+      authorName: Value(authorName),
+      createdAt: Value(createdAt),
+      pending: Value(pending),
+    );
+  }
+
+  factory LocalMessage.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalMessage(
+      id: serializer.fromJson<String>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      channelId: serializer.fromJson<String>(json['channelId']),
+      body: serializer.fromJson<String>(json['body']),
+      authorMembershipId: serializer.fromJson<String>(
+        json['authorMembershipId'],
+      ),
+      authorName: serializer.fromJson<String>(json['authorName']),
+      createdAt: serializer.fromJson<DateTime>(json['createdAt']),
+      pending: serializer.fromJson<bool>(json['pending']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'channelId': serializer.toJson<String>(channelId),
+      'body': serializer.toJson<String>(body),
+      'authorMembershipId': serializer.toJson<String>(authorMembershipId),
+      'authorName': serializer.toJson<String>(authorName),
+      'createdAt': serializer.toJson<DateTime>(createdAt),
+      'pending': serializer.toJson<bool>(pending),
+    };
+  }
+
+  LocalMessage copyWith({
+    String? id,
+    String? gameId,
+    String? channelId,
+    String? body,
+    String? authorMembershipId,
+    String? authorName,
+    DateTime? createdAt,
+    bool? pending,
+  }) => LocalMessage(
+    id: id ?? this.id,
+    gameId: gameId ?? this.gameId,
+    channelId: channelId ?? this.channelId,
+    body: body ?? this.body,
+    authorMembershipId: authorMembershipId ?? this.authorMembershipId,
+    authorName: authorName ?? this.authorName,
+    createdAt: createdAt ?? this.createdAt,
+    pending: pending ?? this.pending,
+  );
+  LocalMessage copyWithCompanion(LocalMessagesCompanion data) {
+    return LocalMessage(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      channelId: data.channelId.present ? data.channelId.value : this.channelId,
+      body: data.body.present ? data.body.value : this.body,
+      authorMembershipId: data.authorMembershipId.present
+          ? data.authorMembershipId.value
+          : this.authorMembershipId,
+      authorName: data.authorName.present
+          ? data.authorName.value
+          : this.authorName,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      pending: data.pending.present ? data.pending.value : this.pending,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalMessage(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('channelId: $channelId, ')
+          ..write('body: $body, ')
+          ..write('authorMembershipId: $authorMembershipId, ')
+          ..write('authorName: $authorName, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('pending: $pending')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    gameId,
+    channelId,
+    body,
+    authorMembershipId,
+    authorName,
+    createdAt,
+    pending,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalMessage &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.channelId == this.channelId &&
+          other.body == this.body &&
+          other.authorMembershipId == this.authorMembershipId &&
+          other.authorName == this.authorName &&
+          other.createdAt == this.createdAt &&
+          other.pending == this.pending);
+}
+
+class LocalMessagesCompanion extends UpdateCompanion<LocalMessage> {
+  final Value<String> id;
+  final Value<String> gameId;
+  final Value<String> channelId;
+  final Value<String> body;
+  final Value<String> authorMembershipId;
+  final Value<String> authorName;
+  final Value<DateTime> createdAt;
+  final Value<bool> pending;
+  final Value<int> rowid;
+  const LocalMessagesCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.channelId = const Value.absent(),
+    this.body = const Value.absent(),
+    this.authorMembershipId = const Value.absent(),
+    this.authorName = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.pending = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalMessagesCompanion.insert({
+    required String id,
+    required String gameId,
+    required String channelId,
+    required String body,
+    required String authorMembershipId,
+    required String authorName,
+    required DateTime createdAt,
+    this.pending = const Value.absent(),
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       gameId = Value(gameId),
+       channelId = Value(channelId),
+       body = Value(body),
+       authorMembershipId = Value(authorMembershipId),
+       authorName = Value(authorName),
+       createdAt = Value(createdAt);
+  static Insertable<LocalMessage> custom({
+    Expression<String>? id,
+    Expression<String>? gameId,
+    Expression<String>? channelId,
+    Expression<String>? body,
+    Expression<String>? authorMembershipId,
+    Expression<String>? authorName,
+    Expression<DateTime>? createdAt,
+    Expression<bool>? pending,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (channelId != null) 'channel_id': channelId,
+      if (body != null) 'body': body,
+      if (authorMembershipId != null)
+        'author_membership_id': authorMembershipId,
+      if (authorName != null) 'author_name': authorName,
+      if (createdAt != null) 'created_at': createdAt,
+      if (pending != null) 'pending': pending,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalMessagesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? gameId,
+    Value<String>? channelId,
+    Value<String>? body,
+    Value<String>? authorMembershipId,
+    Value<String>? authorName,
+    Value<DateTime>? createdAt,
+    Value<bool>? pending,
+    Value<int>? rowid,
+  }) {
+    return LocalMessagesCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      channelId: channelId ?? this.channelId,
+      body: body ?? this.body,
+      authorMembershipId: authorMembershipId ?? this.authorMembershipId,
+      authorName: authorName ?? this.authorName,
+      createdAt: createdAt ?? this.createdAt,
+      pending: pending ?? this.pending,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (channelId.present) {
+      map['channel_id'] = Variable<String>(channelId.value);
+    }
+    if (body.present) {
+      map['body'] = Variable<String>(body.value);
+    }
+    if (authorMembershipId.present) {
+      map['author_membership_id'] = Variable<String>(authorMembershipId.value);
+    }
+    if (authorName.present) {
+      map['author_name'] = Variable<String>(authorName.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<DateTime>(createdAt.value);
+    }
+    if (pending.present) {
+      map['pending'] = Variable<bool>(pending.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalMessagesCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('channelId: $channelId, ')
+          ..write('body: $body, ')
+          ..write('authorMembershipId: $authorMembershipId, ')
+          ..write('authorName: $authorName, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('pending: $pending, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $LocalChannelsTable extends LocalChannels
+    with TableInfo<$LocalChannelsTable, LocalChannel> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $LocalChannelsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _gameIdMeta = const VerificationMeta('gameId');
+  @override
+  late final GeneratedColumn<String> gameId = GeneratedColumn<String>(
+    'game_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _scopeMeta = const VerificationMeta('scope');
+  @override
+  late final GeneratedColumn<String> scope = GeneratedColumn<String>(
+    'scope',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, gameId, scope, name];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'local_channels';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<LocalChannel> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('game_id')) {
+      context.handle(
+        _gameIdMeta,
+        gameId.isAcceptableOrUnknown(data['game_id']!, _gameIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_gameIdMeta);
+    }
+    if (data.containsKey('scope')) {
+      context.handle(
+        _scopeMeta,
+        scope.isAcceptableOrUnknown(data['scope']!, _scopeMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_scopeMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  LocalChannel map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return LocalChannel(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      gameId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}game_id'],
+      )!,
+      scope: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}scope'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+    );
+  }
+
+  @override
+  $LocalChannelsTable createAlias(String alias) {
+    return $LocalChannelsTable(attachedDatabase, alias);
+  }
+}
+
+class LocalChannel extends DataClass implements Insertable<LocalChannel> {
+  final String id;
+  final String gameId;
+  final String scope;
+  final String name;
+  const LocalChannel({
+    required this.id,
+    required this.gameId,
+    required this.scope,
+    required this.name,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['game_id'] = Variable<String>(gameId);
+    map['scope'] = Variable<String>(scope);
+    map['name'] = Variable<String>(name);
+    return map;
+  }
+
+  LocalChannelsCompanion toCompanion(bool nullToAbsent) {
+    return LocalChannelsCompanion(
+      id: Value(id),
+      gameId: Value(gameId),
+      scope: Value(scope),
+      name: Value(name),
+    );
+  }
+
+  factory LocalChannel.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return LocalChannel(
+      id: serializer.fromJson<String>(json['id']),
+      gameId: serializer.fromJson<String>(json['gameId']),
+      scope: serializer.fromJson<String>(json['scope']),
+      name: serializer.fromJson<String>(json['name']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'gameId': serializer.toJson<String>(gameId),
+      'scope': serializer.toJson<String>(scope),
+      'name': serializer.toJson<String>(name),
+    };
+  }
+
+  LocalChannel copyWith({
+    String? id,
+    String? gameId,
+    String? scope,
+    String? name,
+  }) => LocalChannel(
+    id: id ?? this.id,
+    gameId: gameId ?? this.gameId,
+    scope: scope ?? this.scope,
+    name: name ?? this.name,
+  );
+  LocalChannel copyWithCompanion(LocalChannelsCompanion data) {
+    return LocalChannel(
+      id: data.id.present ? data.id.value : this.id,
+      gameId: data.gameId.present ? data.gameId.value : this.gameId,
+      scope: data.scope.present ? data.scope.value : this.scope,
+      name: data.name.present ? data.name.value : this.name,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalChannel(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('scope: $scope, ')
+          ..write('name: $name')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, gameId, scope, name);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is LocalChannel &&
+          other.id == this.id &&
+          other.gameId == this.gameId &&
+          other.scope == this.scope &&
+          other.name == this.name);
+}
+
+class LocalChannelsCompanion extends UpdateCompanion<LocalChannel> {
+  final Value<String> id;
+  final Value<String> gameId;
+  final Value<String> scope;
+  final Value<String> name;
+  final Value<int> rowid;
+  const LocalChannelsCompanion({
+    this.id = const Value.absent(),
+    this.gameId = const Value.absent(),
+    this.scope = const Value.absent(),
+    this.name = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  LocalChannelsCompanion.insert({
+    required String id,
+    required String gameId,
+    required String scope,
+    required String name,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       gameId = Value(gameId),
+       scope = Value(scope),
+       name = Value(name);
+  static Insertable<LocalChannel> custom({
+    Expression<String>? id,
+    Expression<String>? gameId,
+    Expression<String>? scope,
+    Expression<String>? name,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (gameId != null) 'game_id': gameId,
+      if (scope != null) 'scope': scope,
+      if (name != null) 'name': name,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  LocalChannelsCompanion copyWith({
+    Value<String>? id,
+    Value<String>? gameId,
+    Value<String>? scope,
+    Value<String>? name,
+    Value<int>? rowid,
+  }) {
+    return LocalChannelsCompanion(
+      id: id ?? this.id,
+      gameId: gameId ?? this.gameId,
+      scope: scope ?? this.scope,
+      name: name ?? this.name,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (gameId.present) {
+      map['game_id'] = Variable<String>(gameId.value);
+    }
+    if (scope.present) {
+      map['scope'] = Variable<String>(scope.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('LocalChannelsCompanion(')
+          ..write('id: $id, ')
+          ..write('gameId: $gameId, ')
+          ..write('scope: $scope, ')
+          ..write('name: $name, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$LocalDb extends GeneratedDatabase {
   _$LocalDb(QueryExecutor e) : super(e);
   $LocalDbManager get managers => $LocalDbManager(this);
   late final $LocalObjectsTable localObjects = $LocalObjectsTable(this);
   late final $SyncCursorsTable syncCursors = $SyncCursorsTable(this);
   late final $LocalGamesTable localGames = $LocalGamesTable(this);
+  late final $LocalMessagesTable localMessages = $LocalMessagesTable(this);
+  late final $LocalChannelsTable localChannels = $LocalChannelsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1253,6 +2078,8 @@ abstract class _$LocalDb extends GeneratedDatabase {
     localObjects,
     syncCursors,
     localGames,
+    localMessages,
+    localChannels,
   ];
 }
 
@@ -1909,6 +2736,448 @@ typedef $$LocalGamesTableProcessedTableManager =
       LocalGame,
       PrefetchHooks Function()
     >;
+typedef $$LocalMessagesTableCreateCompanionBuilder =
+    LocalMessagesCompanion Function({
+      required String id,
+      required String gameId,
+      required String channelId,
+      required String body,
+      required String authorMembershipId,
+      required String authorName,
+      required DateTime createdAt,
+      Value<bool> pending,
+      Value<int> rowid,
+    });
+typedef $$LocalMessagesTableUpdateCompanionBuilder =
+    LocalMessagesCompanion Function({
+      Value<String> id,
+      Value<String> gameId,
+      Value<String> channelId,
+      Value<String> body,
+      Value<String> authorMembershipId,
+      Value<String> authorName,
+      Value<DateTime> createdAt,
+      Value<bool> pending,
+      Value<int> rowid,
+    });
+
+class $$LocalMessagesTableFilterComposer
+    extends Composer<_$LocalDb, $LocalMessagesTable> {
+  $$LocalMessagesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorMembershipId => $composableBuilder(
+    column: $table.authorMembershipId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get authorName => $composableBuilder(
+    column: $table.authorName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get pending => $composableBuilder(
+    column: $table.pending,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalMessagesTableOrderingComposer
+    extends Composer<_$LocalDb, $LocalMessagesTable> {
+  $$LocalMessagesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get channelId => $composableBuilder(
+    column: $table.channelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get body => $composableBuilder(
+    column: $table.body,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorMembershipId => $composableBuilder(
+    column: $table.authorMembershipId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get authorName => $composableBuilder(
+    column: $table.authorName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get pending => $composableBuilder(
+    column: $table.pending,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalMessagesTableAnnotationComposer
+    extends Composer<_$LocalDb, $LocalMessagesTable> {
+  $$LocalMessagesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
+
+  GeneratedColumn<String> get channelId =>
+      $composableBuilder(column: $table.channelId, builder: (column) => column);
+
+  GeneratedColumn<String> get body =>
+      $composableBuilder(column: $table.body, builder: (column) => column);
+
+  GeneratedColumn<String> get authorMembershipId => $composableBuilder(
+    column: $table.authorMembershipId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get authorName => $composableBuilder(
+    column: $table.authorName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<DateTime> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<bool> get pending =>
+      $composableBuilder(column: $table.pending, builder: (column) => column);
+}
+
+class $$LocalMessagesTableTableManager
+    extends
+        RootTableManager<
+          _$LocalDb,
+          $LocalMessagesTable,
+          LocalMessage,
+          $$LocalMessagesTableFilterComposer,
+          $$LocalMessagesTableOrderingComposer,
+          $$LocalMessagesTableAnnotationComposer,
+          $$LocalMessagesTableCreateCompanionBuilder,
+          $$LocalMessagesTableUpdateCompanionBuilder,
+          (
+            LocalMessage,
+            BaseReferences<_$LocalDb, $LocalMessagesTable, LocalMessage>,
+          ),
+          LocalMessage,
+          PrefetchHooks Function()
+        > {
+  $$LocalMessagesTableTableManager(_$LocalDb db, $LocalMessagesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalMessagesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalMessagesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalMessagesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> gameId = const Value.absent(),
+                Value<String> channelId = const Value.absent(),
+                Value<String> body = const Value.absent(),
+                Value<String> authorMembershipId = const Value.absent(),
+                Value<String> authorName = const Value.absent(),
+                Value<DateTime> createdAt = const Value.absent(),
+                Value<bool> pending = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalMessagesCompanion(
+                id: id,
+                gameId: gameId,
+                channelId: channelId,
+                body: body,
+                authorMembershipId: authorMembershipId,
+                authorName: authorName,
+                createdAt: createdAt,
+                pending: pending,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String gameId,
+                required String channelId,
+                required String body,
+                required String authorMembershipId,
+                required String authorName,
+                required DateTime createdAt,
+                Value<bool> pending = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalMessagesCompanion.insert(
+                id: id,
+                gameId: gameId,
+                channelId: channelId,
+                body: body,
+                authorMembershipId: authorMembershipId,
+                authorName: authorName,
+                createdAt: createdAt,
+                pending: pending,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalMessagesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$LocalDb,
+      $LocalMessagesTable,
+      LocalMessage,
+      $$LocalMessagesTableFilterComposer,
+      $$LocalMessagesTableOrderingComposer,
+      $$LocalMessagesTableAnnotationComposer,
+      $$LocalMessagesTableCreateCompanionBuilder,
+      $$LocalMessagesTableUpdateCompanionBuilder,
+      (
+        LocalMessage,
+        BaseReferences<_$LocalDb, $LocalMessagesTable, LocalMessage>,
+      ),
+      LocalMessage,
+      PrefetchHooks Function()
+    >;
+typedef $$LocalChannelsTableCreateCompanionBuilder =
+    LocalChannelsCompanion Function({
+      required String id,
+      required String gameId,
+      required String scope,
+      required String name,
+      Value<int> rowid,
+    });
+typedef $$LocalChannelsTableUpdateCompanionBuilder =
+    LocalChannelsCompanion Function({
+      Value<String> id,
+      Value<String> gameId,
+      Value<String> scope,
+      Value<String> name,
+      Value<int> rowid,
+    });
+
+class $$LocalChannelsTableFilterComposer
+    extends Composer<_$LocalDb, $LocalChannelsTable> {
+  $$LocalChannelsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get scope => $composableBuilder(
+    column: $table.scope,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$LocalChannelsTableOrderingComposer
+    extends Composer<_$LocalDb, $LocalChannelsTable> {
+  $$LocalChannelsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get gameId => $composableBuilder(
+    column: $table.gameId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get scope => $composableBuilder(
+    column: $table.scope,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$LocalChannelsTableAnnotationComposer
+    extends Composer<_$LocalDb, $LocalChannelsTable> {
+  $$LocalChannelsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get gameId =>
+      $composableBuilder(column: $table.gameId, builder: (column) => column);
+
+  GeneratedColumn<String> get scope =>
+      $composableBuilder(column: $table.scope, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+}
+
+class $$LocalChannelsTableTableManager
+    extends
+        RootTableManager<
+          _$LocalDb,
+          $LocalChannelsTable,
+          LocalChannel,
+          $$LocalChannelsTableFilterComposer,
+          $$LocalChannelsTableOrderingComposer,
+          $$LocalChannelsTableAnnotationComposer,
+          $$LocalChannelsTableCreateCompanionBuilder,
+          $$LocalChannelsTableUpdateCompanionBuilder,
+          (
+            LocalChannel,
+            BaseReferences<_$LocalDb, $LocalChannelsTable, LocalChannel>,
+          ),
+          LocalChannel,
+          PrefetchHooks Function()
+        > {
+  $$LocalChannelsTableTableManager(_$LocalDb db, $LocalChannelsTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$LocalChannelsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$LocalChannelsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$LocalChannelsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> gameId = const Value.absent(),
+                Value<String> scope = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => LocalChannelsCompanion(
+                id: id,
+                gameId: gameId,
+                scope: scope,
+                name: name,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String gameId,
+                required String scope,
+                required String name,
+                Value<int> rowid = const Value.absent(),
+              }) => LocalChannelsCompanion.insert(
+                id: id,
+                gameId: gameId,
+                scope: scope,
+                name: name,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$LocalChannelsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$LocalDb,
+      $LocalChannelsTable,
+      LocalChannel,
+      $$LocalChannelsTableFilterComposer,
+      $$LocalChannelsTableOrderingComposer,
+      $$LocalChannelsTableAnnotationComposer,
+      $$LocalChannelsTableCreateCompanionBuilder,
+      $$LocalChannelsTableUpdateCompanionBuilder,
+      (
+        LocalChannel,
+        BaseReferences<_$LocalDb, $LocalChannelsTable, LocalChannel>,
+      ),
+      LocalChannel,
+      PrefetchHooks Function()
+    >;
 
 class $LocalDbManager {
   final _$LocalDb _db;
@@ -1919,4 +3188,8 @@ class $LocalDbManager {
       $$SyncCursorsTableTableManager(_db, _db.syncCursors);
   $$LocalGamesTableTableManager get localGames =>
       $$LocalGamesTableTableManager(_db, _db.localGames);
+  $$LocalMessagesTableTableManager get localMessages =>
+      $$LocalMessagesTableTableManager(_db, _db.localMessages);
+  $$LocalChannelsTableTableManager get localChannels =>
+      $$LocalChannelsTableTableManager(_db, _db.localChannels);
 }

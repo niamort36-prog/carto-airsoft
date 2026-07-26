@@ -91,8 +91,10 @@ Le QR encode `https://<domaine>/j/<jeton-opaque>` : scannable aussi par l'appare
 | `map_objects` © | **id fourni par le client**, game_id, author_membership_id, kind (`marker`/`line`/`zone`), marker_type (`unit`/`waypoint`/`poi`), position (Point PostGIS — le marqueur, ou le premier sommet en référence), geometry JSONB (GeoJSON LineString/Polygon pour line/zone, validé serveur), properties JSONB (label, couleur, **icon** — clé dans le pack d'icônes), visibility (`global`/`team`/`squad`), **created_at (horloge client)**, server_received_at, updated_at (horloge serveur — sert au LWW et au delta), deleted_at (tombstone) |
 
 **Icônes d'unités : pack fourni par le propriétaire du projet** *(livré le 2026-07-26 : 13 types × 4 affiliations APP-6, 51 PNG — `sf_neutral` absent)*. Le rendu des marqueurs est piloté par les données : chaque marqueur référence une clé d'icône (`properties.icon` = `<type>_<affiliation>`), résolue dans le pack chargé dans le style MapLibre (`addImage` au chargement — fonctionne hors ligne, aucune police requise). Source brute : `Symbol units/` à la racine ; fichiers normalisés : `apps/mobile/assets/icons/units/` ; registre : `apps/mobile/lib/map/unit_icons.dart`. Ajouter une icône = déposer un PNG normalisé + une entrée d'enum, sans toucher au code de rendu. La console web (Phase 3) consommera le même pack, servi par l'API.
-| `messages` © | id client, channel_id, author_membership_id, body, created_at (client), server_received_at |
-| `chat_channels` | id, game_id, scope (`global`/`team`/`squad`), team_id, squad_id — créés automatiquement avec la partie/les équipes |
+| `messages` © | id client, channel_id, game_id, author_membership_id, body, created_at (client), server_received_at, updated_at (curseur delta) |
+| `chat_channels` | id, game_id, scope (`global`/`command`/`team`/`squad`), name, team_id, squad_id, **min_role_rank** (null = tous ; sinon rang maximal admis) — `global` + `command` créés avec la partie, `team`/`squad` avec les escouades (Phase 3) |
+
+**Cloisonnement du chat (§7.4)** : l'accès est calculé serveur à partir du rang du membre (`min_role_rank`). La liste des canaux est filtrée, chaque lecture/écriture est revérifiée, et la diffusion temps réel passe par une room `channel:<id>` que seuls les ayants droit rejoignent — un message de commandement n'atteint jamais le socket d'un joueur sans grade.
 | `position_logs` | membership_id, position, recorded_at — alimente les stats post-partie (Phase 5) ; politique de purge dès le départ pour maîtriser le volume |
 
 ### Gamification (Phase 4)

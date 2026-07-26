@@ -99,6 +99,59 @@ class GamesApi {
     );
   }
 
+  // --- Messagerie (§7.4) ---------------------------------------------------
+
+  static Future<List<ChannelView>> channels(String gameId) async {
+    final res =
+        await http.get(_uri('/games/$gameId/channels'), headers: _headers());
+    _ensureOk(res);
+    return [
+      for (final c in (jsonDecode(res.body) as List<dynamic>))
+        ChannelView.fromJson(c as Map<String, dynamic>),
+    ];
+  }
+
+  static Future<({String serverTime, List<MessageView> messages})> messages(
+    String gameId,
+    String channelId, {
+    String? since,
+  }) async {
+    final query = since != null ? '?since=${Uri.encodeComponent(since)}' : '';
+    final res = await http.get(
+      _uri('/games/$gameId/channels/$channelId/messages$query'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      serverTime: body['serverTime'] as String,
+      messages: [
+        for (final m in (body['messages'] as List<dynamic>))
+          MessageView.fromJson(m as Map<String, dynamic>),
+      ],
+    );
+  }
+
+  static Future<MessageView> sendMessage(
+    String gameId,
+    String channelId, {
+    required String id,
+    required String body,
+    required DateTime createdAt,
+  }) async {
+    final res = await http.post(
+      _uri('/games/$gameId/channels/$channelId/messages'),
+      headers: _headers(),
+      body: jsonEncode({
+        'id': id,
+        'body': body,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+      }),
+    );
+    _ensureOk(res);
+    return MessageView.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
   static void _ensureOk(http.Response res) {
     if (res.statusCode < 200 || res.statusCode >= 300) {
       String message = 'Erreur ${res.statusCode}';
