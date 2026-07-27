@@ -6,6 +6,7 @@ import { ChatModule } from './chat/chat.module';
 import { DbModule } from './db/db.module';
 import { GamesModule } from './games/games.module';
 import { HealthModule } from './health/health.module';
+import { InvitesModule } from './invites/invites.module';
 import { MapObjectsModule } from './map-objects/map-objects.module';
 import { MapStylesModule } from './map-styles/map-styles.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module';
     DbModule,
     GamesModule,
     HealthModule,
+    InvitesModule,
     MapObjectsModule,
     MapStylesModule,
     RealtimeModule,

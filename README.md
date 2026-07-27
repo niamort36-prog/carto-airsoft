@@ -89,7 +89,11 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Insigne réservé aux gradés : un sans-grade le reçoit de sa hiérarchie
   - [x] Messagerie intégrée — canaux Général (tous) et Commandement (gradés), cloisonnement serveur y compris en diffusion temps réel, envoi offline avec file rejouée automatiquement à la reconnexion
   - [x] Service Android de premier plan — GPS actif écran éteint (validé : position reçue par le serveur avec l'écran en veille), notification persistante, sélecteur de cadence Précis/Équilibré/Éco (§9)
-- [ ] Phase 3 — Parties & rôles (QR, permissions, console web)
+- [ ] **Phase 3 — Parties & rôles** *(en cours)*
+  - [x] Invitations par QR (§7.2) — jeton opaque (le rôle n'est jamais encodé), empreinte SHA-256 seule en base, rôle résolu par le serveur au scan, révocation et expiration ; grade écrit sous le QR pour l'impression, QR réutilisables
+  - [ ] Matrice de permissions configurable (remplace les rôles en dur)
+  - [ ] Équipes et escouades (débloque les canaux de chat team/squad)
+  - [ ] Console web PC de préparation (§8)
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)
 

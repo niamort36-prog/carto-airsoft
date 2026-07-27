@@ -43,6 +43,13 @@
       "when": 1785074730627,
       "tag": "0005_pink_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1785081807372,
+      "tag": "0006_flawless_corsair",
+      "breakpoints": true
     }
   ]
 }

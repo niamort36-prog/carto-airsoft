@@ -59,6 +59,67 @@ enum LifeStatus {
       );
 }
 
+/// Invitation par QR (§7.2). Le jeton n'est présent qu'à la création —
+/// ensuite le serveur ne le connaît plus (il n'en garde que l'empreinte).
+class InviteView {
+  const InviteView({
+    required this.id,
+    required this.role,
+    required this.maxUses,
+    required this.useCount,
+    required this.active,
+    required this.createdAt,
+    this.expiresAt,
+    this.revokedAt,
+    this.token,
+    this.url,
+  });
+
+  final String id;
+  final String role;
+  final int? maxUses;
+  final int useCount;
+  final bool active;
+  final DateTime createdAt;
+  final DateTime? expiresAt;
+  final DateTime? revokedAt;
+
+  /// Jeton en clair — uniquement au retour de la création.
+  final String? token;
+  final String? url;
+
+  String get usageLabel {
+    if (maxUses == null) return 'réutilisable · $useCount scan(s)';
+    return '$useCount / $maxUses usage(s)';
+  }
+
+  String get stateLabel {
+    if (revokedAt != null) return 'révoquée';
+    if (expiresAt != null && expiresAt!.isBefore(DateTime.now())) {
+      return 'expirée';
+    }
+    if (!active) return 'épuisée';
+    return 'active';
+  }
+
+  factory InviteView.fromJson(Map<String, dynamic> json) => InviteView(
+        id: json['id'] as String,
+        role: json['role'] as String,
+        maxUses: json['maxUses'] as int?,
+        useCount: json['useCount'] as int? ?? 0,
+        active: json['active'] as bool? ?? false,
+        createdAt: DateTime.parse(json['createdAt'] as String),
+        expiresAt: json['expiresAt'] != null
+            ? DateTime.tryParse(json['expiresAt'] as String)
+            : null,
+        revokedAt: json['revokedAt'] != null
+            ? DateTime.tryParse(json['revokedAt'] as String)
+            : null,
+        token: json['token'] as String?,
+        url: json['url'] as String?,
+      );
+}
+
 /// Canal de discussion (§7.4) — la liste reçue est déjà filtrée par le
 /// serveur selon le grade.
 class ChannelView {

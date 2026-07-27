@@ -157,6 +157,56 @@ export const mapObjects = pgTable(
 export type MapObject = typeof mapObjects.$inferSelect;
 
 /**
+ * Invitations par QR (§7.2). Règle impérative : le QR ne contient JAMAIS
+ * le rôle en clair — il encode un jeton opaque aléatoire, et seul le
+ * serveur sait à quel rôle il correspond. Le jeton lui-même n'est pas
+ * stocké : seule son empreinte SHA-256 l'est (une fuite de la base ne
+ * permet donc pas de rejouer une invitation).
+ */
+export const inviteTokens = pgTable(
+  'invite_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    /** Rôle attribué au porteur du jeton — invisible du client. */
+    role: text('role', {
+      enum: ['commandant', 'capitaine', 'chef_escouade', 'joueur'],
+    }).notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    /** null = réutilisable sans limite (typiquement le rôle joueur). */
+    maxUses: integer('max_uses'),
+    useCount: integer('use_count').notNull().default(0),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdByMembershipId: uuid('created_by_membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('invite_tokens_game_idx').on(t.gameId)],
+);
+
+export type InviteToken = typeof inviteTokens.$inferSelect;
+
+/** Journal des scans : auditable en cas de litige entre joueurs (§7.2). */
+export const inviteRedemptions = pgTable('invite_redemptions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  inviteTokenId: uuid('invite_token_id')
+    .notNull()
+    .references(() => inviteTokens.id),
+  userId: uuid('user_id')
+    .notNull()
+    .references(() => users.id),
+  redeemedAt: timestamp('redeemed_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
  * Canaux de discussion (§7.4). Créés avec la partie :
  *  - `global`  : tous les membres ;
  *  - `command` : réservé aux gradés (cloisonnement par rang).

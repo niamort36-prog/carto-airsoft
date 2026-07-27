@@ -5,7 +5,9 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../db/local_db.dart';
 import '../map/map_screen.dart';
 import 'games_api.dart';
+import 'invites_screen.dart';
 import 'models.dart';
+import 'scan_screen.dart';
 
 /// Accueil après connexion : mes parties, en créer une, en rejoindre une.
 /// (Phase 3 : rejoindre passera par un scan de QR §7.2.)
@@ -92,39 +94,23 @@ class _GamesScreenState extends State<GamesScreen> {
     }
   }
 
+  /// Rejoindre = scanner le QR de l'organisateur (§7.2). Le grade vient du
+  /// jeton, résolu par le serveur — il n'est jamais choisi ici.
   Future<void> _joinGame() async {
-    final controller = TextEditingController();
-    final id = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Rejoindre une partie'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Identifiant de la partie',
-            hintText: 'coller l’ID transmis par l’ORGA',
-          ),
+    final joined = await Navigator.of(context).push<
+        ({String gameId, String gameName, String role})>(
+      MaterialPageRoute(builder: (_) => const ScanScreen()),
+    );
+    if (joined == null) return;
+    _reload();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '« ${joined.gameName} » rejointe comme ${roleLabel(joined.role)}',
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Rejoindre'),
-          ),
-        ],
       ),
     );
-    if (id == null || id.isEmpty) return;
-    try {
-      await GamesApi.joinGame(id);
-      _reload();
-    } catch (e) {
-      _showError(e);
-    }
   }
 
   void _showError(Object e) {
@@ -233,24 +219,27 @@ class _GamesScreenState extends State<GamesScreen> {
                   ),
                   title: Text(g.name),
                   subtitle: Text('${roleLabel(g.role)} · ${g.status}'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openMap(game: g),
-                  onLongPress: () {
-                    showDialog<void>(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: Text(g.name),
-                        content: SelectableText(
-                            'ID à transmettre aux joueurs :\n${g.id}'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('Fermer'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Les invitations sont l'affaire du commandant (§7.2).
+                      if (g.role == 'commandant')
+                        IconButton(
+                          tooltip: 'Invitations QR',
+                          icon: const Icon(Icons.qr_code_2),
+                          onPressed: () => Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => InvitesScreen(
+                                gameId: g.id,
+                                gameName: g.name,
+                              ),
+                            ),
                           ),
-                        ],
-                      ),
-                    );
-                  },
+                        ),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
+                  onTap: () => _openMap(game: g),
                 );
               },
             );

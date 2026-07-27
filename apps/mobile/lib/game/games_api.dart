@@ -99,6 +99,61 @@ class GamesApi {
     );
   }
 
+  // --- Invitations QR (§7.2) -----------------------------------------------
+
+  static Future<List<InviteView>> invites(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/invites'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    return [
+      for (final i in (jsonDecode(res.body) as List<dynamic>))
+        InviteView.fromJson(i as Map<String, dynamic>),
+    ];
+  }
+
+  /// Génère un QR pour un rôle. Le jeton en clair n'est renvoyé qu'ici.
+  static Future<InviteView> createInvite(
+    String gameId, {
+    required String role,
+    int? maxUses,
+  }) async {
+    final res = await http.post(
+      _uri('/games/$gameId/invites'),
+      headers: _headers(),
+      body: jsonEncode({'role': role, 'maxUses': ?maxUses}),
+    );
+    _ensureOk(res);
+    return InviteView.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+  }
+
+  static Future<void> revokeInvite(String gameId, String inviteId) async {
+    final res = await http.delete(
+      _uri('/games/$gameId/invites/$inviteId'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+  }
+
+  /// Présente un jeton scanné : le serveur résout seul la partie et le rôle.
+  static Future<({String gameId, String gameName, String role})> redeem(
+    String token,
+  ) async {
+    final res = await http.post(
+      _uri('/join'),
+      headers: _headers(),
+      body: jsonEncode({'token': token}),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      gameId: body['gameId'] as String,
+      gameName: body['gameName'] as String,
+      role: body['role'] as String,
+    );
+  }
+
   // --- Messagerie (§7.4) ---------------------------------------------------
 
   static Future<List<ChannelView>> channels(String gameId) async {
