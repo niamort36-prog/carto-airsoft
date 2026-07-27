@@ -10,6 +10,7 @@ import {
 } from './api';
 import { InvitesPanel } from './InvitesPanel';
 import { Login } from './Login';
+import { PermissionsPanel } from './PermissionsPanel';
 import { PrepMap } from './PrepMap';
 
 export function App() {
@@ -62,11 +63,23 @@ function Console() {
   }
 
   async function createGame() {
+    // Une seule partie créée à la fois : on annonce la suppression avant.
+    const existante = games.find((g) => g.role === 'commandant');
+    if (
+      existante &&
+      !confirm(
+        `« ${existante.game.name} » sera définitivement supprimée, avec ses ` +
+          'marqueurs, messages et invitations. Continuer ?',
+      )
+    ) {
+      return;
+    }
     const name = prompt('Nom de la partie ?');
     if (!name || name.length < 3) return;
     try {
       await api.createGame(name);
       setGames(await api.games());
+      setSelected(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -212,6 +225,10 @@ function Console() {
 
             {canManageInvites && (
               <InvitesPanel gameId={selected.game.id} teams={teams} />
+            )}
+
+            {selected.permissions.includes('game:manage') && (
+              <PermissionsPanel gameId={selected.game.id} />
             )}
           </>
         )}

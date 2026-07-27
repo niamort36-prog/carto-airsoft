@@ -64,18 +64,41 @@ class _GamesScreenState extends State<GamesScreen> {
   }
 
   Future<void> _createGame() async {
+    // Une seule partie créée à la fois : la nouvelle efface la précédente
+    // avec tout son contenu. On prévient avant, pas après.
+    final existante = (await _games)
+        .where((g) => g.role == 'commandant')
+        .firstOrNull;
+
     final controller = TextEditingController();
+    if (!mounted) return;
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Nouvelle partie'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Nom de la partie',
-            hintText: 'Op Fontainebleau',
-          ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (existante != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  '« ${existante.name} » sera définitivement supprimée, '
+                  'avec ses marqueurs, messages et invitations.',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Nom de la partie',
+                hintText: 'Op Fontainebleau',
+              ),
+            ),
+          ],
         ),
         actions: [
           TextButton(
@@ -84,7 +107,7 @@ class _GamesScreenState extends State<GamesScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('Créer'),
+            child: Text(existante != null ? 'Remplacer' : 'Créer'),
           ),
         ],
       ),

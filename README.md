@@ -102,7 +102,8 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Invitations par QR (§7.2) — jeton opaque (le rôle n'est jamais encodé), empreinte SHA-256 seule en base, rôle résolu par le serveur au scan, révocation et expiration ; grade écrit sous le QR pour l'impression, QR réutilisables
   - [x] Matrice de permissions configurable (§5) — 8 permissions, matrice par défaut surchargeable par partie, plus aucun rôle codé en dur dans la logique métier ; l'app affiche ce que le serveur déclare permis
   - [x] Équipes et escouades (§4) — création avec canal de discussion automatique, affectation manuelle ou portée par le QR, cloisonnement par appartenance (le camp adverse ne voit ni ne reçoit rien), alliés groupés par escouade dans l'app
-  - [x] Console web PC de préparation (§8) — connexion Supabase, parties, organisation (équipes/escouades/affectations), QR imprimables, carte de préparation (points, lignes, zones) poussée par la même API que le mobile
+  - [x] Console web PC de préparation (§8) — connexion Supabase, parties, organisation (équipes/escouades/affectations), QR imprimables, réglage de la matrice de permissions, carte de préparation (points, lignes, zones) poussée par la même API que le mobile
+  - [x] Une seule partie créée à la fois : créer remplace la précédente (avec tout son contenu) ; les parties d'autrui rejointes ne sont jamais touchées
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)
 

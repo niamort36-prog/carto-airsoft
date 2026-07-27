@@ -12,7 +12,13 @@ import { DRIZZLE, type Database } from '../db/db.module';
 import {
   chatChannels,
   games,
+  inviteRedemptions,
+  inviteTokens,
+  mapObjects,
   memberships,
+  messages,
+  squads,
+  teams,
   users,
   type Game,
   type Membership,
@@ -54,10 +60,25 @@ export class GamesService {
     private readonly events: EventEmitter2,
   ) {}
 
-  /** La partie est créée et détenue par le serveur (§2.5). */
+  /**
+   * La partie est créée et détenue par le serveur (§2.5).
+   *
+   * Règle du propriétaire du projet : on ne garde qu'UNE partie créée à la
+   * fois — la nouvelle remplace l'ancienne. Seules les parties dont on est
+   * le créateur sont supprimées ; celles rejointes par QR appartiennent à
+   * quelqu'un d'autre et ne sont jamais touchées.
+   */
   async createGame(auth: AuthenticatedUser, name: string): Promise<Game> {
     const user = await this.usersService.getOrCreate(auth);
     return this.db.transaction(async (tx) => {
+      const previous = await tx
+        .select({ id: games.id })
+        .from(games)
+        .where(eq(games.ownerUserId, user.id));
+      for (const old of previous) {
+        await this.purgeGame(tx, old.id);
+      }
+
       const [game] = await tx
         .insert(games)
         .values({ name, ownerUserId: user.id })
@@ -281,6 +302,32 @@ export class GamesService {
   ): Promise<Membership> {
     const user = await this.usersService.getOrCreate(auth);
     return this.assertActiveMember(user.id, gameId);
+  }
+
+  /**
+   * Efface une partie et tout ce qui en dépend. L'ordre suit les clés
+   * étrangères : on retire les feuilles avant les racines, sinon PostgreSQL
+   * refuse. Suppression définitive et volontaire (pas de tombstone ici :
+   * la partie entière disparaît, il n'y a rien à réconcilier).
+   */
+  private async purgeGame(tx: Database, gameId: string): Promise<void> {
+    const tokens = await tx
+      .select({ id: inviteTokens.id })
+      .from(inviteTokens)
+      .where(eq(inviteTokens.gameId, gameId));
+    for (const t of tokens) {
+      await tx
+        .delete(inviteRedemptions)
+        .where(eq(inviteRedemptions.inviteTokenId, t.id));
+    }
+    await tx.delete(inviteTokens).where(eq(inviteTokens.gameId, gameId));
+    await tx.delete(messages).where(eq(messages.gameId, gameId));
+    await tx.delete(chatChannels).where(eq(chatChannels.gameId, gameId));
+    await tx.delete(mapObjects).where(eq(mapObjects.gameId, gameId));
+    await tx.delete(memberships).where(eq(memberships.gameId, gameId));
+    await tx.delete(squads).where(eq(squads.gameId, gameId));
+    await tx.delete(teams).where(eq(teams.gameId, gameId));
+    await tx.delete(games).where(eq(games.id, gameId));
   }
 
   private async assertActiveMember(

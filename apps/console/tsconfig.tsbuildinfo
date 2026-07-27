@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/invitespanel.tsx","./src/login.tsx","./src/prepmap.tsx","./src/api.ts","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/invitespanel.tsx","./src/login.tsx","./src/permissionspanel.tsx","./src/prepmap.tsx","./src/api.ts","./src/main.tsx","./src/vite-env.d.ts"],"version":"5.9.3"}
