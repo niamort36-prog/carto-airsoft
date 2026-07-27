@@ -11,7 +11,7 @@ Inspirée d'ATAK (cartographie tactique) et d'ARES ALPHA (gamification airsoft).
 |---|---|---|
 | `apps/api` | API arbitre — héberge les parties, valide toute la logique de jeu | NestJS + PostgreSQL/PostGIS + Socket.IO |
 | `apps/mobile` | App joueurs terrain (Android d'abord, iOS ensuite) | Flutter + MapLibre |
-| `apps/console` | Console web de préparation pour organisateurs (Phase 3) | React + Vite + MapLibre GL JS |
+| `apps/console` | Console web de préparation pour organisateurs | React + Vite + MapLibre GL JS |
 | `packages/shared` | Types partagés API ↔ console | TypeScript |
 
 ## Démarrage (développement)
@@ -53,6 +53,15 @@ Simuler un second joueur qui patrouille (utile pour tester la carte à deux) :
 node apps/api/e2e/simulate-player.mjs "Nom de la partie" 120
 ```
 
+## Console web (organisateurs)
+
+```bash
+npm run dev --workspace apps/console
+```
+
+Puis http://localhost:5173 — se connecter avec le compte de l'app mobile.
+Copier `apps/console/.env.example` en `.env` au premier lancement.
+
 ## App mobile
 
 ```bash
@@ -93,7 +102,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Invitations par QR (§7.2) — jeton opaque (le rôle n'est jamais encodé), empreinte SHA-256 seule en base, rôle résolu par le serveur au scan, révocation et expiration ; grade écrit sous le QR pour l'impression, QR réutilisables
   - [x] Matrice de permissions configurable (§5) — 8 permissions, matrice par défaut surchargeable par partie, plus aucun rôle codé en dur dans la logique métier ; l'app affiche ce que le serveur déclare permis
   - [x] Équipes et escouades (§4) — création avec canal de discussion automatique, affectation manuelle ou portée par le QR, cloisonnement par appartenance (le camp adverse ne voit ni ne reçoit rien), alliés groupés par escouade dans l'app
-  - [ ] Console web PC de préparation (§8)
+  - [x] Console web PC de préparation (§8) — connexion Supabase, parties, organisation (équipes/escouades/affectations), QR imprimables, carte de préparation (points, lignes, zones) poussée par la même API que le mobile
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)
 
