@@ -10,6 +10,8 @@ import type { AuthenticatedUser } from '../auth/supabase-token.service';
 import { DRIZZLE, type Database } from '../db/db.module';
 import { mapObjects, type MapObject } from '../db/schema';
 import { GamesService } from '../games/games.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { PERMISSIONS } from '../permissions/permissions';
 import type { UpsertMapObjectDto } from './dto';
 
 /** Vue d'un objet carte diffusée aux clients (REST et WebSocket). */
@@ -39,6 +41,7 @@ export class MapObjectsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly gamesService: GamesService,
+    private readonly permissions: PermissionsService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -56,9 +59,13 @@ export class MapObjectsService {
       auth,
       gameId,
     );
-    // Le commandant peut retirer les marqueurs de tous (ex-rôle ORGA,
-    // remplacé par la matrice de permissions en Phase 3).
-    const isOrga = membership.role === 'commandant';
+    // Qui peut toucher aux marqueurs des autres est une permission (§5),
+    // pas un rôle en dur : configurable par partie.
+    const canDeleteAny = await this.permissions.can(
+      gameId,
+      membership.role,
+      PERMISSIONS.MARKERS_DELETE_ANY,
+    );
     const results: MapObjectView[] = [];
 
     for (const dto of dtos) {
@@ -75,9 +82,9 @@ export class MapObjectsService {
         if (existing.gameId !== gameId) {
           throw new ForbiddenException('Objet rattaché à une autre partie');
         }
-        if (existing.authorMembershipId !== membership.id && !isOrga) {
+        if (existing.authorMembershipId !== membership.id && !canDeleteAny) {
           throw new ForbiddenException(
-            'Seul l’auteur ou un ORGA peut modifier cet objet',
+            'Seul l’auteur, ou un grade habilité, peut modifier cet objet',
           );
         }
         const [row] = await this.db

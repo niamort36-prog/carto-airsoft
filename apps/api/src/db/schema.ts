@@ -223,8 +223,14 @@ export const chatChannels = pgTable('chat_channels', {
   name: text('name').notNull(),
   teamId: uuid('team_id'),
   squadId: uuid('squad_id'),
-  /** Rang maximal (inclus) requis pour lire/écrire ; null = tout le monde. */
+  /** Rang maximal (inclus) requis — hérité, conservé pour compatibilité. */
   minRoleRank: integer('min_role_rank'),
+  /**
+   * Permission exigée pour lire/écrire ; null = ouvert à tous les membres.
+   * Remplace le contrôle par rang : le cloisonnement devient configurable
+   * comme le reste (§5).
+   */
+  requiredPermission: text('required_permission'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

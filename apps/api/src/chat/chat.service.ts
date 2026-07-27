@@ -10,8 +10,9 @@ import {
   users,
   type ChatChannel,
 } from '../db/schema';
-import { ROLE_RANK } from '../games/dto';
 import { GamesService } from '../games/games.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import type { Permission } from '../permissions/permissions';
 import type { SendMessageDto } from './dto';
 
 export interface ChannelView {
@@ -42,6 +43,7 @@ export class ChatService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly gamesService: GamesService,
+    private readonly permissions: PermissionsService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -58,9 +60,13 @@ export class ChatService {
       .select()
       .from(chatChannels)
       .where(eq(chatChannels.gameId, gameId));
-    return all
-      .filter((c) => this.canAccess(c, membership.role))
-      .map((c) => ({ id: c.id, scope: c.scope, name: c.name }));
+    const visible: ChannelView[] = [];
+    for (const c of all) {
+      if (await this.canAccess(c, gameId, membership.role)) {
+        visible.push({ id: c.id, scope: c.scope, name: c.name });
+      }
+    }
+    return visible;
   }
 
   /**
@@ -171,12 +177,28 @@ export class ChatService {
       .select()
       .from(chatChannels)
       .where(eq(chatChannels.gameId, gameId));
-    return all.filter((c) => this.canAccess(c, role)).map((c) => c.id);
+    const ids: string[] = [];
+    for (const c of all) {
+      if (await this.canAccess(c, gameId, role)) ids.push(c.id);
+    }
+    return ids;
   }
 
-  private canAccess(channel: ChatChannel, role: string): boolean {
-    if (channel.minRoleRank == null) return true;
-    return (ROLE_RANK[role] ?? 9) <= channel.minRoleRank;
+  /**
+   * Accès à un canal : piloté par une permission (§5). Sans permission
+   * exigée, le canal est ouvert à tous les membres de la partie.
+   */
+  private async canAccess(
+    channel: ChatChannel,
+    gameId: string,
+    role: string,
+  ): Promise<boolean> {
+    if (channel.requiredPermission == null) return true;
+    return this.permissions.can(
+      gameId,
+      role,
+      channel.requiredPermission as Permission,
+    );
   }
 
   private async assertChannelAccess(
@@ -194,7 +216,7 @@ export class ChatService {
       .where(
         and(eq(chatChannels.id, channelId), eq(chatChannels.gameId, gameId)),
       );
-    if (!channel || !this.canAccess(channel, membership.role)) {
+    if (!channel || !(await this.canAccess(channel, gameId, membership.role))) {
       throw new ForbiddenException('Canal inaccessible avec votre grade');
     }
     return membership;

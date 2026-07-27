@@ -99,6 +99,18 @@ class GamesApi {
     );
   }
 
+  /// Mes permissions dans une partie (§5) — l'app s'y conforme pour
+  /// n'afficher que les actions réellement possibles.
+  static Future<List<String>> myPermissions(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/permissions'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return [for (final p in (body['mine'] as List<dynamic>)) p as String];
+  }
+
   // --- Invitations QR (§7.2) -----------------------------------------------
 
   static Future<List<InviteView>> invites(String gameId) async {

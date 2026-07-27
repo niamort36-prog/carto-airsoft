@@ -9,6 +9,8 @@ import { HealthModule } from './health/health.module';
 import { InvitesModule } from './invites/invites.module';
 import { MapObjectsModule } from './map-objects/map-objects.module';
 import { MapStylesModule } from './map-styles/map-styles.module';
+import { PermissionsApiModule } from './permissions/permissions-api.module';
+import { PermissionsModule } from './permissions/permissions.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { UsersModule } from './users/users.module';
 
@@ -28,6 +30,8 @@ import { UsersModule } from './users/users.module';
     InvitesModule,
     MapObjectsModule,
     MapStylesModule,
+    PermissionsModule,
+    PermissionsApiModule,
     RealtimeModule,
     UsersModule,
   ],

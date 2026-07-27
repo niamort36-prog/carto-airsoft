@@ -18,6 +18,8 @@ import {
   type Membership,
 } from '../db/schema';
 import { UsersService } from '../users/users.service';
+import { PermissionsService } from '../permissions/permissions.service';
+import { PERMISSIONS } from '../permissions/permissions';
 import { ROLE_RANK, type LifeStatus, type UpdateMemberDto } from './dto';
 
 /** Vue « membre » diffusée aux autres joueurs de la partie. */
@@ -46,6 +48,7 @@ export class GamesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly usersService: UsersService,
+    private readonly permissions: PermissionsService,
     private readonly events: EventEmitter2,
   ) {}
 
@@ -72,18 +75,23 @@ export class GamesService {
           gameId: game.id,
           scope: 'command',
           name: 'Commandement',
-          minRoleRank: ROLE_RANK.chef_escouade,
+          requiredPermission: PERMISSIONS.CHAT_COMMAND,
         },
       ]);
       return game;
     });
   }
 
+  /**
+   * Mes parties, avec MES permissions dans chacune : l'app n'a ainsi pas à
+   * deviner ce que mon grade autorise (§5) — elle affiche ce que le serveur
+   * dit possible, et le serveur revérifie de toute façon à l'appel.
+   */
   async listMyGames(
     auth: AuthenticatedUser,
-  ): Promise<Array<{ game: Game; role: string }>> {
+  ): Promise<Array<{ game: Game; role: string; permissions: string[] }>> {
     const user = await this.usersService.getOrCreate(auth);
-    return this.db
+    const rows = await this.db
       .select({ game: games, role: memberships.role })
       .from(memberships)
       .innerJoin(games, eq(memberships.gameId, games.id))
@@ -97,6 +105,13 @@ export class GamesService {
       // Ordre stable (plus récentes d'abord) : sans ORDER BY, Postgres peut
       // mélanger la liste d'un rafraîchissement à l'autre.
       .orderBy(desc(games.createdAt));
+
+    return Promise.all(
+      rows.map(async (r) => ({
+        ...r,
+        permissions: await this.permissions.forRole(r.game.id, r.role),
+      })),
+    );
   }
 
   /**
@@ -215,22 +230,34 @@ export class GamesService {
     const targetRank = ROLE_RANK[target.role] ?? 9;
 
     if (dto.role != null) {
-      if (requester.role !== 'commandant') {
-        throw new ForbiddenException('Seul le commandant nomme les grades');
-      }
+      await this.permissions.assert(
+        requester,
+        PERMISSIONS.MEMBERS_PROMOTE,
+        'Votre grade ne permet pas de nommer les grades',
+      );
       if (target.id === requester.id || target.role === 'commandant') {
         throw new ForbiddenException('Le commandant ne peut pas être rétrogradé');
       }
+      // Même avec la permission, on ne nomme pas au-dessus de son propre
+      // grade : la matrice ouvre la capacité, la hiérarchie en borne la portée.
+      if ((ROLE_RANK[dto.role] ?? 9) < requesterRank) {
+        throw new ForbiddenException(
+          'On ne peut pas nommer à un grade supérieur au sien',
+        );
+      }
     }
     if (dto.unitType != null) {
+      await this.permissions.assert(
+        requester,
+        PERMISSIONS.MEMBERS_BADGE,
+        'Votre grade ne permet pas d’attribuer les insignes',
+      );
+      // La permission ouvre la capacité ; la hiérarchie en fixe la portée :
+      // soi-même, ou un rang strictement inférieur.
       const isSelf = target.id === requester.id;
-      const allowed = isSelf
-        ? requesterRank < ROLE_RANK.joueur // gradés uniquement sur soi
-        : requesterRank < targetRank; // sinon rang strictement supérieur
-      if (!allowed) {
+      if (!isSelf && requesterRank >= targetRank) {
         throw new ForbiddenException(
-          'L’insigne est attribué par la hiérarchie : gradés uniquement, '
-          + 'sur soi ou sur un rang inférieur',
+          'L’insigne ne se modifie que sur soi ou sur un rang inférieur',
         );
       }
     }

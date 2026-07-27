@@ -65,6 +65,11 @@ class _MapScreenState extends State<MapScreen> {
   GameRealtime? _realtime;
   ObjectSyncService? _syncService;
   bool _realtimeConnected = false;
+
+  /// Mes permissions dans cette partie (§5) — chargées du serveur, jamais
+  /// déduites du grade côté téléphone.
+  List<String> _myPermissions = const [];
+  bool _can(String permission) => _myPermissions.contains(permission);
   final Map<String, MemberView> _members = {};
   final Map<String, MapObjectView> _objects = {};
   String? _myMembershipId;
@@ -105,6 +110,17 @@ class _MapScreenState extends State<MapScreen> {
         },
       )..connect();
       _loadObjects();
+      _loadPermissions();
+    }
+  }
+
+  Future<void> _loadPermissions() async {
+    try {
+      final perms = await GamesApi.myPermissions(widget.gameId!);
+      if (mounted) setState(() => _myPermissions = perms);
+    } catch (_) {
+      // Hors réseau : aucune action de commandement n'est possible de toute
+      // façon (elles exigent l'arbitre), on reste sur une liste vide.
     }
   }
 
@@ -387,8 +403,8 @@ class _MapScreenState extends State<MapScreen> {
       ),
       title: Text('${me.displayName} (moi)'),
       subtitle: Text('${roleLabel(me.role)} · ${me.lifeStatus.label}'),
-      // L'insigne se mérite : les sans-grade le reçoivent de leur hiérarchie.
-      trailing: roleRank(me.role) >= roleRank('joueur')
+      // L'insigne se mérite : sans la permission, on le reçoit de sa hiérarchie.
+      trailing: !_can(Perm.membersBadge)
           ? null
           : IconButton(
         tooltip: 'Choisir mon insigne',
@@ -417,8 +433,11 @@ class _MapScreenState extends State<MapScreen> {
   Widget _allyTile(MemberView a) {
     final me = _myMembershipId != null ? _members[_myMembershipId] : null;
     final myRank = me != null ? roleRank(me.role) : 9;
-    final canBadge = myRank < roleRank(a.role);
-    final canPromote = me?.role == 'commandant' && a.role != 'commandant';
+    // Permission (capacité) ET hiérarchie (portée) : le serveur applique
+    // exactement les deux, l'interface les reflète.
+    final canBadge = _can(Perm.membersBadge) && myRank < roleRank(a.role);
+    final canPromote =
+        _can(Perm.membersPromote) && a.role != 'commandant';
     return ListTile(
       dense: true,
       leading: Image.asset(
@@ -924,9 +943,8 @@ class _MapScreenState extends State<MapScreen> {
     if (!tappable.contains(layerId)) return;
     final object = _objects[id];
     if (object == null) return;
-    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
     final canDelete = object.authorMembershipId == _myMembershipId ||
-        me?.role == 'commandant';
+        _can(Perm.markersDeleteAny);
     final author = _members[object.authorMembershipId];
     showModalBottomSheet<void>(
       context: context,

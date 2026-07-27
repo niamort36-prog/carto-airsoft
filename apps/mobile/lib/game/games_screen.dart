@@ -55,6 +55,10 @@ class _GamesScreenState extends State<GamesScreen> {
     }
   }
 
+  // Note : le cache local ne mémorise pas les permissions — hors réseau, les
+  // actions de commandement sont de toute façon impossibles (elles exigent
+  // l'arbitre). Les boutons réapparaissent au retour du réseau.
+
   void _reload() {
     setState(() => _games = _load());
   }
@@ -222,8 +226,8 @@ class _GamesScreenState extends State<GamesScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Les invitations sont l'affaire du commandant (§7.2).
-                      if (g.role == 'commandant')
+                      // Affiché selon la permission, pas selon le grade (§5).
+                      if (g.can(Perm.invitesManage))
                         IconButton(
                           tooltip: 'Invitations QR',
                           icon: const Icon(Icons.qr_code_2),

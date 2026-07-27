@@ -23,12 +23,19 @@ class GameSummary {
     required this.name,
     required this.status,
     required this.role,
+    this.permissions = const [],
   });
 
   final String id;
   final String name;
   final String status;
   final String role;
+
+  /// Mes permissions dans cette partie, telles que le serveur les calcule
+  /// (§5) — l'app n'interprète jamais le rôle elle-même.
+  final List<String> permissions;
+
+  bool can(String permission) => permissions.contains(permission);
 
   factory GameSummary.fromJson(Map<String, dynamic> json) {
     final game = json['game'] as Map<String, dynamic>;
@@ -37,8 +44,24 @@ class GameSummary {
       name: game['name'] as String,
       status: game['status'] as String,
       role: json['role'] as String,
+      permissions: [
+        for (final p in (json['permissions'] as List<dynamic>? ?? []))
+          p as String,
+      ],
     );
   }
+}
+
+/// Clés de permission (miroir du catalogue serveur).
+abstract final class Perm {
+  static const gameManage = 'game:manage';
+  static const membersPromote = 'members:promote';
+  static const membersKick = 'members:kick';
+  static const membersBadge = 'members:badge';
+  static const invitesManage = 'invites:manage';
+  static const markersDeleteAny = 'markers:delete_any';
+  static const chatCommand = 'chat:command';
+  static const teamsManage = 'teams:manage';
 }
 
 /// Statuts de vie (§7.5) — mêmes valeurs que l'API.

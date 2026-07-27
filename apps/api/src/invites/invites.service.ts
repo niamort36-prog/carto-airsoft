@@ -19,6 +19,9 @@ import {
 } from '../db/schema';
 import { UsersService } from '../users/users.service';
 import { GamesService } from '../games/games.service';
+import { ROLE_RANK } from '../games/dto';
+import { PermissionsService } from '../permissions/permissions.service';
+import { PERMISSIONS } from '../permissions/permissions';
 import type { CreateInviteDto } from './dto';
 
 /** Vue d'une invitation — ne contient JAMAIS le jeton (il n'est plus connu). */
@@ -47,6 +50,7 @@ export class InvitesService {
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly gamesService: GamesService,
     private readonly usersService: UsersService,
+    private readonly permissions: PermissionsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -64,7 +68,7 @@ export class InvitesService {
     return match ? match[1] : trimmed;
   }
 
-  /** Création d'un QR : réservée au commandant de la partie (§7.2). */
+  /** Création d'un QR : soumise à la permission `invites:manage` (§5, §7.2). */
   async createInvite(
     auth: AuthenticatedUser,
     gameId: string,
@@ -74,9 +78,17 @@ export class InvitesService {
       auth,
       gameId,
     );
-    if (membership.role !== 'commandant') {
+    await this.permissions.assert(
+      membership,
+      PERMISSIONS.INVITES_MANAGE,
+      'Votre grade ne permet pas de générer des invitations',
+    );
+    // Garde-fou hiérarchique : on n'invite jamais à un grade SUPÉRIEUR au
+    // sien (sinon un capitaine se ferait un QR de commandant). Inviter à son
+    // propre grade ou en dessous reste permis.
+    if ((ROLE_RANK[dto.role] ?? 9) < (ROLE_RANK[membership.role] ?? 9)) {
       throw new ForbiddenException(
-        'Seul le commandant peut générer des invitations',
+        'On ne peut pas inviter à un grade supérieur au sien',
       );
     }
 
@@ -109,11 +121,11 @@ export class InvitesService {
       auth,
       gameId,
     );
-    if (membership.role !== 'commandant') {
-      throw new ForbiddenException(
-        'Seul le commandant consulte les invitations',
-      );
-    }
+    await this.permissions.assert(
+      membership,
+      PERMISSIONS.INVITES_MANAGE,
+      'Votre grade ne permet pas de consulter les invitations',
+    );
     const rows = await this.db
       .select()
       .from(inviteTokens)
@@ -131,9 +143,11 @@ export class InvitesService {
       auth,
       gameId,
     );
-    if (membership.role !== 'commandant') {
-      throw new ForbiddenException('Seul le commandant révoque une invitation');
-    }
+    await this.permissions.assert(
+      membership,
+      PERMISSIONS.INVITES_MANAGE,
+      'Votre grade ne permet pas de révoquer une invitation',
+    );
     const [row] = await this.db
       .update(inviteTokens)
       .set({ revokedAt: new Date() })
