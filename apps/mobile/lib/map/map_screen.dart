@@ -70,6 +70,9 @@ class _MapScreenState extends State<MapScreen> {
   /// déduites du grade côté téléphone.
   List<String> _myPermissions = const [];
   bool _can(String permission) => _myPermissions.contains(permission);
+
+  /// Noms des équipes et escouades, pour grouper et étiqueter les alliés.
+  Map<String, String> _unitNames = const {};
   final Map<String, MemberView> _members = {};
   final Map<String, MapObjectView> _objects = {};
   String? _myMembershipId;
@@ -117,7 +120,13 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _loadPermissions() async {
     try {
       final perms = await GamesApi.myPermissions(widget.gameId!);
-      if (mounted) setState(() => _myPermissions = perms);
+      final names = await GamesApi.unitNames(widget.gameId!);
+      if (mounted) {
+        setState(() {
+          _myPermissions = perms;
+          _unitNames = names;
+        });
+      }
     } catch (_) {
       // Hors réseau : aucune action de commandement n'est possible de toute
       // façon (elles exigent l'arbitre), on reste sur une liste vide.
@@ -370,9 +379,7 @@ class _MapScreenState extends State<MapScreen> {
                   Flexible(
                     child: ListView(
                       shrinkWrap: true,
-                      children: [
-                        for (final a in allies) _allyTile(a),
-                      ],
+                      children: _groupedAllies(allies),
                     ),
                   ),
               ],
@@ -389,6 +396,45 @@ class _MapScreenState extends State<MapScreen> {
         LifeStatus.medicNeeded => const Color(0xFFF44336),
         LifeStatus.support => const Color(0xFF2196F3),
       };
+
+  /// Alliés groupés par escouade (§4), l'ordre hiérarchique étant conservé
+  /// à l'intérieur de chaque groupe. Les non-affectés ferment la liste.
+  List<Widget> _groupedAllies(List<MemberView> allies) {
+    final groups = <String?, List<MemberView>>{};
+    for (final a in allies) {
+      groups.putIfAbsent(a.squadId, () => []).add(a);
+    }
+    // Escouades nommées d'abord, « sans escouade » à la fin.
+    final keys = groups.keys.toList()
+      ..sort((a, b) {
+        if (a == null) return 1;
+        if (b == null) return -1;
+        return (_unitNames[a] ?? '').compareTo(_unitNames[b] ?? '');
+      });
+
+    final widgets = <Widget>[];
+    for (final key in keys) {
+      // Pas d'en-tête si la partie n'a aucune escouade : inutile de titrer.
+      if (keys.length > 1 || key != null) {
+        widgets.add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Text(
+              key == null
+                  ? 'Sans escouade'
+                  : (_unitNames[key] ?? 'Escouade').toUpperCase(),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+            ),
+          ),
+        );
+      }
+      widgets.addAll(groups[key]!.map(_allyTile));
+    }
+    return widgets;
+  }
 
   /// Ma propre ligne : mon insigne, mon grade — et le bouton pour choisir
   /// mon insigne (autorisé pour tous sur soi-même, validé serveur).

@@ -254,6 +254,8 @@ class MemberView {
     required this.email,
     required this.role,
     required this.unitType,
+    this.teamId,
+    this.squadId,
     required this.lifeStatus,
     required this.lat,
     required this.lng,
@@ -268,6 +270,10 @@ class MemberView {
 
   /// Insigne du joueur (type d'unité du pack d'icônes).
   final String unitType;
+
+  /// Rattachement (§4) — null tant que le joueur n'est pas affecté.
+  final String? teamId;
+  final String? squadId;
   final LifeStatus lifeStatus;
   final double? lat;
   final double? lng;
@@ -285,6 +291,8 @@ class MemberView {
       email: json['email'] as String?,
       role: json['role'] as String,
       unitType: json['unitType'] as String? ?? 'infantry',
+      teamId: json['teamId'] as String?,
+      squadId: json['squadId'] as String?,
       lifeStatus: LifeStatus.fromWire(json['lifeStatus'] as String),
       // PostGIS : x = longitude, y = latitude.
       lng: (pos?['x'] as num?)?.toDouble(),

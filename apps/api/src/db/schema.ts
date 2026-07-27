@@ -69,11 +69,10 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id),
     /**
-     * Hiérarchie §5 (version jouable ; la matrice complète arrive en
-     * Phase 3) : le créateur de la partie est commandant, il nomme les
-     * capitaines et chefs d'escouade. L'icône d'unité est l'insigne du
-     * joueur sur la carte, modifiable par les gradés sur les rangs
-     * strictement inférieurs.
+     * Hiérarchie §5 : le créateur de la partie est commandant, il nomme les
+     * capitaines et chefs d'escouade. Ce grade détermine la portée des
+     * actions ; ce qu'il AUTORISE vient de la matrice de permissions.
+     * L'icône d'unité est l'insigne du joueur sur la carte.
      */
     role: text('role', {
       enum: ['commandant', 'capitaine', 'chef_escouade', 'joueur'],
@@ -81,6 +80,9 @@ export const memberships = pgTable(
       .notNull()
       .default('joueur'),
     unitType: text('unit_type').notNull().default('infantry'),
+    /** Rattachement (§4) : camp, puis escouade au sein du camp. */
+    teamId: uuid('team_id'),
+    squadId: uuid('squad_id'),
     lifeStatus: text('life_status', {
       enum: ['alive', 'dead', 'medic_needed', 'support'],
     })
@@ -157,6 +159,42 @@ export const mapObjects = pgTable(
 export type MapObject = typeof mapObjects.$inferSelect;
 
 /**
+ * Équipes (§4) : les camps qui s'affrontent. Une partie en a typiquement
+ * deux, mais rien ne l'impose.
+ */
+export const teams = pgTable('teams', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  name: text('name').notNull(),
+  /** Couleur d'affichage (#RRGGBB). */
+  color: text('color').notNull().default('#4CAF50'),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type Team = typeof teams.$inferSelect;
+
+/** Escouades (§5) : subdivisions d'une équipe, menées par un chef. */
+export const squads = pgTable('squads', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  teamId: uuid('team_id')
+    .notNull()
+    .references(() => teams.id),
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type Squad = typeof squads.$inferSelect;
+
+/**
  * Invitations par QR (§7.2). Règle impérative : le QR ne contient JAMAIS
  * le rôle en clair — il encode un jeton opaque aléatoire, et seul le
  * serveur sait à quel rôle il correspond. Le jeton lui-même n'est pas
@@ -174,6 +212,9 @@ export const inviteTokens = pgTable(
     role: text('role', {
       enum: ['commandant', 'capitaine', 'chef_escouade', 'joueur'],
     }).notNull(),
+    /** Affectation portée par le QR : le scan place directement le joueur. */
+    teamId: uuid('team_id'),
+    squadId: uuid('squad_id'),
     tokenHash: text('token_hash').notNull().unique(),
     /** null = réutilisable sans limite (typiquement le rôle joueur). */
     maxUses: integer('max_uses'),

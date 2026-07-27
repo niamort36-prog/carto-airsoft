@@ -99,6 +99,26 @@ class GamesApi {
     );
   }
 
+  /// Organisation de la partie : équipes et escouades (§4). Sert à grouper
+  /// les alliés et à nommer les rattachements.
+  static Future<Map<String, String>> unitNames(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/teams'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    final names = <String, String>{};
+    for (final t in (jsonDecode(res.body) as List<dynamic>)) {
+      final team = t as Map<String, dynamic>;
+      names[team['id'] as String] = team['name'] as String;
+      for (final s in (team['squads'] as List<dynamic>)) {
+        final squad = s as Map<String, dynamic>;
+        names[squad['id'] as String] = squad['name'] as String;
+      }
+    }
+    return names;
+  }
+
   /// Mes permissions dans une partie (§5) — l'app s'y conforme pour
   /// n'afficher que les actions réellement possibles.
   static Future<List<String>> myPermissions(String gameId) async {

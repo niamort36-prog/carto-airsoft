@@ -29,6 +29,8 @@ export interface MemberView {
   email: string | null;
   role: string;
   unitType: string;
+  teamId: string | null;
+  squadId: string | null;
   lifeStatus: string;
   lastPosition: { x: number; y: number } | null;
   lastPositionAt: Date | null;
@@ -310,6 +312,8 @@ export class GamesService {
         email: users.email,
         role: memberships.role,
         unitType: memberships.unitType,
+        teamId: memberships.teamId,
+        squadId: memberships.squadId,
         lifeStatus: memberships.lifeStatus,
         lastPosition: memberships.lastPosition,
         lastPositionAt: memberships.lastPositionAt,

@@ -92,7 +92,7 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
 - [ ] **Phase 3 — Parties & rôles** *(en cours)*
   - [x] Invitations par QR (§7.2) — jeton opaque (le rôle n'est jamais encodé), empreinte SHA-256 seule en base, rôle résolu par le serveur au scan, révocation et expiration ; grade écrit sous le QR pour l'impression, QR réutilisables
   - [x] Matrice de permissions configurable (§5) — 8 permissions, matrice par défaut surchargeable par partie, plus aucun rôle codé en dur dans la logique métier ; l'app affiche ce que le serveur déclare permis
-  - [ ] Équipes et escouades (débloque les canaux de chat team/squad)
+  - [x] Équipes et escouades (§4) — création avec canal de discussion automatique, affectation manuelle ou portée par le QR, cloisonnement par appartenance (le camp adverse ne voit ni ne reçoit rien), alliés groupés par escouade dans l'app
   - [ ] Console web PC de préparation (§8)
 - [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)

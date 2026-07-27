@@ -110,10 +110,10 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
       );
       client.data.memberships.set(gameId, membership.id);
       await client.join(`game:${gameId}`);
-      // Rooms des canaux autorisés par le grade (§7.4).
+      // Rooms des canaux autorisés par le grade ET le rattachement (§7.4).
       for (const channelId of await this.chat.accessibleChannelIds(
         gameId,
-        membership.role,
+        membership,
       )) {
         await client.join(`channel:${channelId}`);
       }

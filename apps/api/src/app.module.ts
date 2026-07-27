@@ -12,6 +12,7 @@ import { MapStylesModule } from './map-styles/map-styles.module';
 import { PermissionsApiModule } from './permissions/permissions-api.module';
 import { PermissionsModule } from './permissions/permissions.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
     PermissionsModule,
     PermissionsApiModule,
     RealtimeModule,
+    TeamsModule,
     UsersModule,
   ],
 })

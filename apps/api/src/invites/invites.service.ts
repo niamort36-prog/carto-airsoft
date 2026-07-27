@@ -22,6 +22,7 @@ import { GamesService } from '../games/games.service';
 import { ROLE_RANK } from '../games/dto';
 import { PermissionsService } from '../permissions/permissions.service';
 import { PERMISSIONS } from '../permissions/permissions';
+import { TeamsService } from '../teams/teams.service';
 import type { CreateInviteDto } from './dto';
 
 /** Vue d'une invitation — ne contient JAMAIS le jeton (il n'est plus connu). */
@@ -51,6 +52,7 @@ export class InvitesService {
     private readonly gamesService: GamesService,
     private readonly usersService: UsersService,
     private readonly permissions: PermissionsService,
+    private readonly teams: TeamsService,
     private readonly config: ConfigService,
   ) {}
 
@@ -96,11 +98,20 @@ export class InvitesService {
     // C'est ce qui empêche de fabriquer soi-même un QR d'un grade supérieur.
     const token = randomBytes(32).toString('base64url');
 
+    // Affectation portée par le QR : cohérence validée dès la création,
+    // pour ne pas découvrir l'erreur au moment du scan sur le terrain.
+    const { teamId, squadId } = await this.teams.resolveAssignment(gameId, {
+      teamId: dto.teamId,
+      squadId: dto.squadId,
+    });
+
     const [row] = await this.db
       .insert(inviteTokens)
       .values({
         gameId,
         role: dto.role,
+        teamId,
+        squadId,
         tokenHash: InvitesService.hash(token),
         // Réutilisable par défaut (choix du propriétaire du projet) ; une
         // limite reste possible à la demande, la mécanique est en place.
@@ -244,6 +255,9 @@ export class InvitesService {
       userId: user.id,
       role: invite.role,
       unitType: invite.role === 'commandant' ? 'command' : 'infantry',
+      // Le QR peut placer directement dans un camp / une escouade (§4).
+      teamId: invite.teamId,
+      squadId: invite.squadId,
     });
     await this.db
       .insert(inviteRedemptions)

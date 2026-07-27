@@ -21,6 +21,13 @@ export interface ChannelView {
   name: string;
 }
 
+/** Ce dont dépend l'accès à un canal : grade + rattachement. */
+export type MembershipContext = {
+  role: string;
+  teamId: string | null;
+  squadId: string | null;
+};
+
 export interface MessageView {
   id: string;
   channelId: string;
@@ -62,7 +69,7 @@ export class ChatService {
       .where(eq(chatChannels.gameId, gameId));
     const visible: ChannelView[] = [];
     for (const c of all) {
-      if (await this.canAccess(c, gameId, membership.role)) {
+      if (await this.canAccess(c, gameId, membership)) {
         visible.push({ id: c.id, scope: c.scope, name: c.name });
       }
     }
@@ -168,10 +175,10 @@ export class ChatService {
     return view;
   }
 
-  /** Canaux dont ce rôle a le droit — utilisé aussi par la gateway. */
+  /** Canaux accessibles à ce membre — utilisé aussi par la gateway. */
   async accessibleChannelIds(
     gameId: string,
-    role: string,
+    membership: MembershipContext,
   ): Promise<string[]> {
     const all = await this.db
       .select()
@@ -179,24 +186,32 @@ export class ChatService {
       .where(eq(chatChannels.gameId, gameId));
     const ids: string[] = [];
     for (const c of all) {
-      if (await this.canAccess(c, gameId, role)) ids.push(c.id);
+      if (await this.canAccess(c, gameId, membership)) ids.push(c.id);
     }
     return ids;
   }
 
   /**
-   * Accès à un canal : piloté par une permission (§5). Sans permission
-   * exigée, le canal est ouvert à tous les membres de la partie.
+   * Accès à un canal (§7.4), deux conditions cumulatives :
+   *  - la permission éventuellement exigée (matrice §5) ;
+   *  - l'APPARTENANCE pour les canaux d'équipe et d'escouade — on ne lit
+   *    pas le canal d'un camp adverse, quel que soit son grade.
    */
   private async canAccess(
     channel: ChatChannel,
     gameId: string,
-    role: string,
+    membership: MembershipContext,
   ): Promise<boolean> {
+    if (channel.teamId != null && channel.teamId !== membership.teamId) {
+      return false;
+    }
+    if (channel.squadId != null && channel.squadId !== membership.squadId) {
+      return false;
+    }
     if (channel.requiredPermission == null) return true;
     return this.permissions.can(
       gameId,
-      role,
+      membership.role,
       channel.requiredPermission as Permission,
     );
   }
@@ -216,8 +231,10 @@ export class ChatService {
       .where(
         and(eq(chatChannels.id, channelId), eq(chatChannels.gameId, gameId)),
       );
-    if (!channel || !(await this.canAccess(channel, gameId, membership.role))) {
-      throw new ForbiddenException('Canal inaccessible avec votre grade');
+    if (!channel || !(await this.canAccess(channel, gameId, membership))) {
+      throw new ForbiddenException(
+        'Canal inaccessible : grade ou rattachement insuffisant',
+      );
     }
     return membership;
   }

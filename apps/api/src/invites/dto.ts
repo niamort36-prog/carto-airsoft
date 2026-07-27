@@ -5,6 +5,7 @@ import {
   IsISO8601,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Max,
   Min,
@@ -39,6 +40,23 @@ export class CreateInviteDto {
   @IsOptional()
   @IsISO8601()
   expiresAt?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Équipe d’affectation : le scan place directement le joueur dans ce camp',
+  })
+  @IsOptional()
+  @IsUUID()
+  teamId?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description: 'Escouade d’affectation (détermine l’équipe)',
+  })
+  @IsOptional()
+  @IsUUID()
+  squadId?: string;
 }
 
 export class RedeemInviteDto {
