@@ -53,6 +53,13 @@ Simuler un second joueur qui patrouille (utile pour tester la carte à deux) :
 node apps/api/e2e/simulate-player.mjs "Nom de la partie" 120
 ```
 
+Préparer une partie de démonstration (2 camps, 2 drapeaux, drone + brouilleur),
+puis y placer un adversaire à portée du drone :
+
+```bash
+node apps/api/e2e/demo-setup.mjs "Op Fontainebleau"
+```
+
 ## Console web (organisateurs)
 
 ```bash
@@ -104,7 +111,13 @@ flutter run --dart-define=API_BASE_URL=http://192.168.1.42:3000/v1
   - [x] Équipes et escouades (§4) — création avec canal de discussion automatique, affectation manuelle ou portée par le QR, cloisonnement par appartenance (le camp adverse ne voit ni ne reçoit rien), alliés groupés par escouade dans l'app
   - [x] Console web PC de préparation (§8) — connexion Supabase, parties, organisation (équipes/escouades/affectations), QR imprimables, réglage de la matrice de permissions, carte de préparation (points, lignes, zones) poussée par la même API que le mobile
   - [x] Une seule partie créée à la fois : créer remplace la précédente (avec tout son contenu) ; les parties d'autrui rejointes ne sont jamais touchées
-- [ ] Phase 4 — Gamification (objectifs, QR bonus, perks)
+- [x] **Phase 4 — Gamification** *(terminée le 2026-07-27)*
+  - [x] Objectifs/drapeaux + capture par QR (§7.8) — jeton opaque, arbitrage serveur (camp, grade habilité, ordre de capture), récompense configurable, scores d'équipe, annonce temps réel de la capture
+  - [x] QR bonus (§7.9) — points, pièce jointe, quotas global et par joueur, journal anti-rejeu
+  - [x] `/scan` unifié : le serveur reconnaît seul invitation / objectif / bonus
+  - [x] Perks arbitrés serveur (§7.7) — drone révélant les hostiles d'un rayon via PostGIS `ST_DWithin`, brouilleur coupant les drones adverses, stock par équipe, recharge, grades habilités
+  - [x] **Anti-triche** : les positions adverses ne quittent jamais le serveur, sauf pour l'équipe qui lance un drone et le temps du survol
+  - [x] Perks grisés hors connexion avec message explicite (exigence §7.7)
 - [ ] Phase 5 — Ouverture (API publique, imports, CoT, stats)
 
 ## Principes non négociables (rappel)

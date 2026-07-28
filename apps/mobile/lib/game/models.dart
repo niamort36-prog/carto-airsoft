@@ -82,6 +82,201 @@ enum LifeStatus {
       );
 }
 
+/// Résultat d'un scan (§7.2, §7.8, §7.9) : c'est le SERVEUR qui a décidé de
+/// quoi il s'agissait, l'app se contente de l'annoncer au joueur.
+sealed class ScanOutcome {
+  const ScanOutcome();
+
+  factory ScanOutcome.fromJson(Map<String, dynamic> json) =>
+      switch (json['type'] as String) {
+        'objective' => ObjectiveCaptured(
+            name: json['name'] as String,
+            pointsAwarded: json['pointsAwarded'] as int? ?? 0,
+            teamScore: json['teamScore'] as int? ?? 0,
+          ),
+        'bonus' => BonusRedeemed(
+            name: json['name'] as String,
+            pointsAwarded: json['pointsAwarded'] as int? ?? 0,
+            attachmentUrl: json['attachmentUrl'] as String?,
+          ),
+        _ => GameJoined(
+            gameId: json['gameId'] as String,
+            gameName: json['gameName'] as String,
+            role: json['role'] as String,
+          ),
+      };
+}
+
+class GameJoined extends ScanOutcome {
+  const GameJoined({
+    required this.gameId,
+    required this.gameName,
+    required this.role,
+  });
+  final String gameId;
+  final String gameName;
+  final String role;
+}
+
+class ObjectiveCaptured extends ScanOutcome {
+  const ObjectiveCaptured({
+    required this.name,
+    required this.pointsAwarded,
+    required this.teamScore,
+  });
+  final String name;
+  final int pointsAwarded;
+  final int teamScore;
+}
+
+class BonusRedeemed extends ScanOutcome {
+  const BonusRedeemed({
+    required this.name,
+    required this.pointsAwarded,
+    this.attachmentUrl,
+  });
+  final String name;
+  final int pointsAwarded;
+  final String? attachmentUrl;
+}
+
+/// Drapeau à capturer (§7.8).
+class ObjectiveView {
+  const ObjectiveView({
+    required this.id,
+    required this.name,
+    required this.lat,
+    required this.lng,
+    required this.holderTeamId,
+    this.captureOrder,
+  });
+
+  final String id;
+  final String name;
+  final double lat;
+  final double lng;
+  final String? holderTeamId;
+  final int? captureOrder;
+
+  factory ObjectiveView.fromJson(Map<String, dynamic> json) => ObjectiveView(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        lat: (json['lat'] as num).toDouble(),
+        lng: (json['lng'] as num).toDouble(),
+        holderTeamId: json['holderTeamId'] as String?,
+        captureOrder: json['captureOrder'] as int?,
+      );
+}
+
+class TeamScore {
+  const TeamScore({
+    required this.id,
+    required this.name,
+    required this.color,
+    required this.score,
+  });
+
+  final String id;
+  final String name;
+  final String color;
+  final int score;
+
+  factory TeamScore.fromJson(Map<String, dynamic> json) => TeamScore(
+        id: json['id'] as String,
+        name: json['name'] as String,
+        color: json['color'] as String,
+        score: json['score'] as int? ?? 0,
+      );
+}
+
+/// Perk et son état pour MON équipe (§7.7) — stock et recharge calculés
+/// serveur, l'app ne fait que les afficher.
+class PerkView {
+  const PerkView({
+    required this.id,
+    required this.type,
+    required this.radiusMeters,
+    required this.durationSeconds,
+    this.remaining,
+    this.availableAt,
+  });
+
+  final String id;
+  final String type;
+  final int radiusMeters;
+  final int durationSeconds;
+  final int? remaining;
+  final DateTime? availableAt;
+
+  String get label => switch (type) {
+        'drone' => 'Drone',
+        'jammer' => 'Brouilleur',
+        _ => type,
+      };
+
+  bool get ready =>
+      (remaining == null || remaining! > 0) &&
+      (availableAt == null || availableAt!.isBefore(DateTime.now()));
+
+  factory PerkView.fromJson(Map<String, dynamic> json) => PerkView(
+        id: json['id'] as String,
+        type: json['type'] as String,
+        radiusMeters: json['radiusMeters'] as int? ?? 300,
+        durationSeconds: json['durationSeconds'] as int? ?? 30,
+        remaining: json['remaining'] as int?,
+        availableAt: json['availableAt'] != null
+            ? DateTime.tryParse(json['availableAt'] as String)
+            : null,
+      );
+}
+
+/// Contact hostile révélé par un drone — éphémère par construction.
+class RevealedContact {
+  const RevealedContact({
+    required this.membershipId,
+    required this.lat,
+    required this.lng,
+    this.pseudo,
+  });
+
+  final String membershipId;
+  final double lat;
+  final double lng;
+  final String? pseudo;
+
+  factory RevealedContact.fromJson(Map<String, dynamic> json) =>
+      RevealedContact(
+        membershipId: json['membershipId'] as String,
+        lat: (json['lat'] as num).toDouble(),
+        lng: (json['lng'] as num).toDouble(),
+        pseudo: json['pseudo'] as String?,
+      );
+}
+
+class PerkActivation {
+  const PerkActivation({
+    required this.type,
+    required this.endsAt,
+    required this.contacts,
+    required this.jammed,
+  });
+
+  final String type;
+  final DateTime endsAt;
+  final List<RevealedContact> contacts;
+  final int jammed;
+
+  factory PerkActivation.fromJson(Map<String, dynamic> json) => PerkActivation(
+        type: json['type'] as String,
+        endsAt: DateTime.parse(json['endsAt'] as String),
+        contacts: [
+          for (final c in (json['contacts'] as List<dynamic>? ?? []))
+            RevealedContact.fromJson(c as Map<String, dynamic>),
+        ],
+        jammed: json['jammed'] as int? ?? 0,
+      );
+}
+
 /// Invitation par QR (§7.2). Le jeton n'est présent qu'à la création —
 /// ensuite le serveur ne le connaît plus (il n'en garde que l'empreinte).
 class InviteView {

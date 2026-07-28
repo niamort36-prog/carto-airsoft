@@ -170,6 +170,11 @@ export const teams = pgTable('teams', {
   name: text('name').notNull(),
   /** Couleur d'affichage (#RRGGBB). */
   color: text('color').notNull().default('#4CAF50'),
+  /**
+   * Score (§7.8) : alimenté par les captures d'objectifs et les bonus.
+   * Calculé serveur uniquement — un client ne peut pas s'attribuer de points.
+   */
+  score: integer('score').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -246,6 +251,180 @@ export const inviteRedemptions = pgTable('invite_redemptions', {
     .notNull()
     .defaultNow(),
 });
+
+/**
+ * Objectifs / drapeaux (§7.8). Conçus dans la console, joués sur le terrain :
+ * un QR physique est fixé sur le drapeau, le joueur le scanne, et c'est le
+ * SERVEUR qui décide si la capture est valide (grade, ordre, camp).
+ */
+export const objectives = pgTable(
+  'objectives',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    name: text('name').notNull(),
+    position: geometry('position', { type: 'point', mode: 'xy', srid: 4326 })
+      .notNull(),
+    /** Empreinte du jeton du QR physique — jamais le jeton lui-même. */
+    tokenHash: text('token_hash').notNull().unique(),
+    /**
+     * Ordre de capture optionnel : un objectif de rang N n'est capturable
+     * que si l'équipe détient déjà tous les rangs inférieurs.
+     */
+    captureOrder: integer('capture_order'),
+    /** Grades habilités à capturer ; vide = tous. */
+    allowedRoles: text('allowed_roles').array().notNull().default([]),
+    /** Récompense libre : { points: 100 } ou toute ressource du créateur. */
+    reward: jsonb('reward').notNull().default({}),
+    holderTeamId: uuid('holder_team_id'),
+    lastCapturedAt: timestamp('last_captured_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('objectives_game_idx').on(t.gameId)],
+);
+
+export type Objective = typeof objectives.$inferSelect;
+
+/** Liens entre objectifs — tracés sur la carte, et prérequis d'ordre. */
+export const objectiveLinks = pgTable('objective_links', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  fromObjectiveId: uuid('from_objective_id')
+    .notNull()
+    .references(() => objectives.id),
+  toObjectiveId: uuid('to_objective_id')
+    .notNull()
+    .references(() => objectives.id),
+});
+
+/** Historique complet des captures : auditable en cas de litige. */
+export const objectiveCaptures = pgTable('objective_captures', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  objectiveId: uuid('objective_id')
+    .notNull()
+    .references(() => objectives.id),
+  membershipId: uuid('membership_id')
+    .notNull()
+    .references(() => memberships.id),
+  teamId: uuid('team_id')
+    .notNull()
+    .references(() => teams.id),
+  pointsAwarded: integer('points_awarded').notNull().default(0),
+  capturedAt: timestamp('captured_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * QR bonus portés par des joueurs ou posés sur le terrain (§7.9) : points,
+ * ressources, ou pièce jointe (image/document) délivrée par le serveur.
+ */
+export const bonusQrs = pgTable(
+  'bonus_qrs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull().unique(),
+    reward: jsonb('reward').notNull().default({}),
+    /** Contenu délivré au scan (image, document…). */
+    attachmentUrl: text('attachment_url'),
+    /** null = illimité. */
+    maxScansTotal: integer('max_scans_total'),
+    maxScansPerPlayer: integer('max_scans_per_player').default(1),
+    scanCount: integer('scan_count').notNull().default(0),
+    /** Joueur qui porte le QR, s'il est porté (§7.9). */
+    carrierMembershipId: uuid('carrier_membership_id'),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('bonus_qrs_game_idx').on(t.gameId)],
+);
+
+export type BonusQr = typeof bonusQrs.$inferSelect;
+
+/** Journal des scans de bonus : anti-rejeu et audit. */
+export const bonusScans = pgTable('bonus_scans', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  bonusQrId: uuid('bonus_qr_id')
+    .notNull()
+    .references(() => bonusQrs.id),
+  membershipId: uuid('membership_id')
+    .notNull()
+    .references(() => memberships.id),
+  pointsAwarded: integer('points_awarded').notNull().default(0),
+  scannedAt: timestamp('scanned_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+/**
+ * Perks (§7.7) — purement logiciels, calculés serveur. Le drone révèle les
+ * positions hostiles d'une zone pendant un temps limité ; le brouilleur
+ * annule les drones adverses. ⚠️ Brouillage du perk virtuel UNIQUEMENT :
+ * jamais un brouilleur radio réel, ce serait illégal.
+ */
+export const perkDefinitions = pgTable('perk_definitions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  gameId: uuid('game_id')
+    .notNull()
+    .references(() => games.id),
+  type: text('type', { enum: ['drone', 'jammer'] }).notNull(),
+  /** Rayon (m), durée (s), cooldown (s) — réglés par l'organisateur. */
+  radiusMeters: integer('radius_meters').notNull().default(300),
+  durationSeconds: integer('duration_seconds').notNull().default(30),
+  cooldownSeconds: integer('cooldown_seconds').notNull().default(300),
+  /** Stock par équipe ; null = illimité. */
+  stockPerTeam: integer('stock_per_team'),
+  allowedRoles: text('allowed_roles').array().notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type PerkDefinition = typeof perkDefinitions.$inferSelect;
+
+/** Activation d'un perk : qui, où, de quand à quand. */
+export const perkInstances = pgTable(
+  'perk_instances',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    definitionId: uuid('definition_id')
+      .notNull()
+      .references(() => perkDefinitions.id),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    casterMembershipId: uuid('caster_membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    teamId: uuid('team_id')
+      .notNull()
+      .references(() => teams.id),
+    /** Centre de la zone visée (drone) ou du brouillage (jammer). */
+    target: geometry('target', { type: 'point', mode: 'xy', srid: 4326 })
+      .notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    /** Renseigné quand un brouilleur adverse l'a interrompu. */
+    jammedAt: timestamp('jammed_at', { withTimezone: true }),
+  },
+  (t) => [index('perk_instances_game_idx').on(t.gameId, t.endsAt)],
+);
+
+export type PerkInstance = typeof perkInstances.$inferSelect;
 
 /**
  * Canaux de discussion (§7.4). Créés avec la partie :

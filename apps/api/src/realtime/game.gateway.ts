@@ -19,6 +19,8 @@ import {
   type MemberUpdatedEvent,
   type MemberView,
 } from '../games/games.service';
+// GamesService est aussi utilisé statiquement (maskPosition) — l'import
+// ci-dessus couvre les deux usages.
 
 /** Événements émis par d'autres services — importés « par contrat » (pas de
  *  dépendance de module : la gateway ne fait que rediffuser). */
@@ -31,6 +33,16 @@ import {
   MESSAGE_SENT_EVENT,
   type MessageSentEvent,
 } from '../chat/chat.service';
+import {
+  GAME_EVENT,
+  type GameEventPayload,
+} from '../objectives/objectives.service';
+import {
+  PERK_EVENT,
+  PERK_REVEAL_EVENT,
+  type PerkEventPayload,
+  type PerkRevealPayload,
+} from '../perks/perks.service';
 
 interface GameSocketData {
   user: AuthenticatedUser;
@@ -110,6 +122,12 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
       );
       client.data.memberships.set(gameId, membership.id);
       await client.join(`game:${gameId}`);
+      // Room de camp : sert aux positions et aux révélations de drone.
+      // Les joueurs sans équipe partagent une room commune — dans une
+      // partie sans camps, tout le monde est allié de tout le monde.
+      await client.join(
+        GameGateway.campRoom(gameId, membership.teamId),
+      );
       // Rooms des canaux autorisés par le grade ET le rattachement (§7.4).
       for (const channelId of await this.chat.accessibleChannelIds(
         gameId,
@@ -176,12 +194,26 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
     );
   }
 
-  /** Rediffuse tout changement de membre à la room de la partie. */
+  /**
+   * Rediffusion d'un changement de membre. Invariant anti-triche (§2.1) :
+   * la position complète ne part QUE dans la room de son équipe ; les autres
+   * camps reçoivent la même mise à jour sans coordonnées. Sans cela, tout le
+   * monde verrait tout le monde et le perk drone n'aurait aucun sens.
+   */
   @OnEvent(MEMBER_UPDATED_EVENT)
   onMemberUpdated(event: MemberUpdatedEvent): void {
+    const { gameId, member } = event;
+    const camp = GameGateway.campRoom(gameId, member.teamId);
+    this.server.to(camp).emit('member:update', member);
     this.server
-      .to(`game:${event.gameId}`)
-      .emit('member:update', event.member);
+      .to(`game:${gameId}`)
+      .except(camp)
+      .emit('member:update', GamesService.maskPosition(member));
+  }
+
+  /** Room du camp : l'équipe, ou le groupe des non-affectés de la partie. */
+  private static campRoom(gameId: string, teamId: string | null): string {
+    return teamId ? `team:${teamId}` : `game:${gameId}:sans-equipe`;
   }
 
   /** Rediffuse tout changement d'objet carte (marqueur posé/modifié/supprimé). */
@@ -202,5 +234,38 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
     this.server
       .to(`channel:${event.channelId}`)
       .emit('chat:message', event.message);
+  }
+
+  /**
+   * Événements de jeu (capture d'objectif, bonus récupéré…) : annoncés à
+   * toute la partie — c'est le sel du jeu que les deux camps sachent
+   * qu'un drapeau vient de tomber.
+   */
+  @OnEvent(GAME_EVENT)
+  onGameEvent(payload: GameEventPayload): void {
+    this.server.to(`game:${payload.gameId}`).emit('game:event', payload.event);
+  }
+
+  /**
+   * Révélation du drone (§7.7) : émise UNIQUEMENT dans la room de l'équipe
+   * qui l'a lancé. C'est l'invariant anti-triche central — les positions
+   * hostiles ne quittent le serveur que là, et le temps du perk.
+   */
+  @OnEvent(PERK_REVEAL_EVENT)
+  onPerkReveal(payload: PerkRevealPayload): void {
+    this.server.to(`team:${payload.teamId}`).emit('perk:reveal', {
+      instanceId: payload.instanceId,
+      endsAt: payload.endsAt,
+      contacts: payload.contacts,
+    });
+  }
+
+  /** Événements de perk : à toute la partie, ou à une seule équipe. */
+  @OnEvent(PERK_EVENT)
+  onPerkEvent(payload: PerkEventPayload): void {
+    const room = payload.teamId
+      ? `team:${payload.teamId}`
+      : `game:${payload.gameId}`;
+    this.server.to(room).emit('perk:event', payload.event);
   }
 }

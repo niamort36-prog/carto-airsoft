@@ -9,8 +9,10 @@ import { HealthModule } from './health/health.module';
 import { InvitesModule } from './invites/invites.module';
 import { MapObjectsModule } from './map-objects/map-objects.module';
 import { MapStylesModule } from './map-styles/map-styles.module';
+import { ObjectivesModule } from './objectives/objectives.module';
 import { PermissionsApiModule } from './permissions/permissions-api.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { PerksModule } from './perks/perks.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
@@ -31,8 +33,10 @@ import { UsersModule } from './users/users.module';
     InvitesModule,
     MapObjectsModule,
     MapStylesModule,
+    ObjectivesModule,
     PermissionsModule,
     PermissionsApiModule,
+    PerksModule,
     RealtimeModule,
     TeamsModule,
     UsersModule,

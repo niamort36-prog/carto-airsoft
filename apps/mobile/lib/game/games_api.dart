@@ -168,21 +168,71 @@ class GamesApi {
     _ensureOk(res);
   }
 
-  /// Présente un jeton scanné : le serveur résout seul la partie et le rôle.
-  static Future<({String gameId, String gameName, String role})> redeem(
-    String token,
-  ) async {
+  /// Présente un jeton scanné. Le serveur reconnaît seul sa nature —
+  /// invitation, capture d'objectif ou bonus (§7.2, §7.8, §7.9) — et arbitre.
+  static Future<ScanOutcome> scan(String token) async {
     final res = await http.post(
-      _uri('/join'),
+      _uri('/scan'),
       headers: _headers(),
       body: jsonEncode({'token': token}),
     );
     _ensureOk(res);
-    final body = jsonDecode(res.body) as Map<String, dynamic>;
-    return (
-      gameId: body['gameId'] as String,
-      gameName: body['gameName'] as String,
-      role: body['role'] as String,
+    return ScanOutcome.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
+    );
+  }
+
+  // --- Gamification (§7.7-7.9) ---------------------------------------------
+
+  static Future<List<ObjectiveView>> objectives(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/objectives'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    return [
+      for (final o in (jsonDecode(res.body) as List<dynamic>))
+        ObjectiveView.fromJson(o as Map<String, dynamic>),
+    ];
+  }
+
+  static Future<List<TeamScore>> scores(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/scores'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    return [
+      for (final s in (jsonDecode(res.body) as List<dynamic>))
+        TeamScore.fromJson(s as Map<String, dynamic>),
+    ];
+  }
+
+  static Future<List<PerkView>> perks(String gameId) async {
+    final res =
+        await http.get(_uri('/games/$gameId/perks'), headers: _headers());
+    _ensureOk(res);
+    return [
+      for (final p in (jsonDecode(res.body) as List<dynamic>))
+        PerkView.fromJson(p as Map<String, dynamic>),
+    ];
+  }
+
+  /// Active un perk sur une zone. Le serveur valide et calcule le résultat.
+  static Future<PerkActivation> activatePerk(
+    String gameId,
+    String perkId, {
+    required double lat,
+    required double lng,
+  }) async {
+    final res = await http.post(
+      _uri('/games/$gameId/perks/$perkId/activate'),
+      headers: _headers(),
+      body: jsonEncode({'lat': lat, 'lng': lng}),
+    );
+    _ensureOk(res);
+    return PerkActivation.fromJson(
+      jsonDecode(res.body) as Map<String, dynamic>,
     );
   }
 

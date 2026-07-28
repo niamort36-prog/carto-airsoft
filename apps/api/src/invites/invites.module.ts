@@ -10,5 +10,6 @@ import { InvitesService } from './invites.service';
   imports: [AuthModule, GamesModule, TeamsModule, UsersModule],
   controllers: [InvitesController],
   providers: [InvitesService],
+  exports: [InvitesService],
 })
 export class InvitesModule {}

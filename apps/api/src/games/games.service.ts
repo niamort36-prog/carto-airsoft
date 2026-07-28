@@ -10,6 +10,8 @@ import { and, desc, eq, isNull } from 'drizzle-orm';
 import type { AuthenticatedUser } from '../auth/supabase-auth.guard';
 import { DRIZZLE, type Database } from '../db/db.module';
 import {
+  bonusQrs,
+  bonusScans,
   chatChannels,
   games,
   inviteRedemptions,
@@ -17,6 +19,11 @@ import {
   mapObjects,
   memberships,
   messages,
+  objectiveCaptures,
+  objectiveLinks,
+  objectives,
+  perkDefinitions,
+  perkInstances,
   squads,
   teams,
   users,
@@ -168,8 +175,20 @@ export class GamesService {
     gameId: string,
   ): Promise<MemberView[]> {
     const user = await this.usersService.getOrCreate(auth);
-    await this.assertActiveMember(user.id, gameId);
-    return this.selectMembers(gameId);
+    const me = await this.assertActiveMember(user.id, gameId);
+    const all = await this.selectMembers(gameId);
+    // On sait QUI joue, mais pas OÙ sont les adversaires (§2.1) : seul le
+    // perk drone lève ce voile, et temporairement.
+    return all.map((m) =>
+      m.membershipId === me.id || m.teamId === me.teamId
+        ? m
+        : GamesService.maskPosition(m),
+    );
+  }
+
+  /** Retire la position d'un membre : ce qu'on montre aux camps adverses. */
+  static maskPosition(member: MemberView): MemberView {
+    return { ...member, lastPosition: null, lastPositionAt: null };
   }
 
   async updateMyStatus(
@@ -321,6 +340,31 @@ export class GamesService {
         .where(eq(inviteRedemptions.inviteTokenId, t.id));
     }
     await tx.delete(inviteTokens).where(eq(inviteTokens.gameId, gameId));
+
+    // Gamification (§7.7-7.9) : journaux d'abord, puis les objets eux-mêmes.
+    const flags = await tx
+      .select({ id: objectives.id })
+      .from(objectives)
+      .where(eq(objectives.gameId, gameId));
+    for (const f of flags) {
+      await tx
+        .delete(objectiveCaptures)
+        .where(eq(objectiveCaptures.objectiveId, f.id));
+    }
+    await tx.delete(objectiveLinks).where(eq(objectiveLinks.gameId, gameId));
+    await tx.delete(objectives).where(eq(objectives.gameId, gameId));
+
+    const bonuses = await tx
+      .select({ id: bonusQrs.id })
+      .from(bonusQrs)
+      .where(eq(bonusQrs.gameId, gameId));
+    for (const b of bonuses) {
+      await tx.delete(bonusScans).where(eq(bonusScans.bonusQrId, b.id));
+    }
+    await tx.delete(bonusQrs).where(eq(bonusQrs.gameId, gameId));
+
+    await tx.delete(perkInstances).where(eq(perkInstances.gameId, gameId));
+    await tx.delete(perkDefinitions).where(eq(perkDefinitions.gameId, gameId));
     await tx.delete(messages).where(eq(messages.gameId, gameId));
     await tx.delete(chatChannels).where(eq(chatChannels.gameId, gameId));
     await tx.delete(mapObjects).where(eq(mapObjects.gameId, gameId));

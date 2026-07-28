@@ -64,6 +64,20 @@
       "when": 1785115906415,
       "tag": "0008_opposite_carmella_unuscione",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785157430218,
+      "tag": "0009_safe_hedge_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785157786865,
+      "tag": "0010_numerous_bruce_banner",
+      "breakpoints": true
     }
   ]
 }

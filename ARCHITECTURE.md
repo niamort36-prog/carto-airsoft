@@ -160,7 +160,7 @@ Phase 5
 | serveur → clients | `game:event` | capture d'objectif, perk activé/terminé, joueur rejoint/exclu |
 | serveur → clients | `perk:reveal` | positions hostiles révélées par un drone — émis uniquement aux ayants droit, pendant la durée du perk |
 
-Anti-triche : le serveur n'émet **jamais** les positions ennemies en dehors d'un `perk:reveal` actif. Le client ne les possède donc pas (il ne peut pas « décacher » ce qu'il n'a pas reçu).
+**Anti-triche (implémenté, Phase 4)** : le serveur n'émet **jamais** les positions ennemies en dehors d'un `perk:reveal` actif. Concrètement, `member:update` part en clair dans la room du camp (`team:<id>`) et **masqué** — coordonnées retirées — dans le reste de la partie ; `GET /members` applique le même masquage. Le client ne possède donc pas ce qu'il ne doit pas voir : il ne peut pas « décacher » ce qu'il n'a jamais reçu. Une partie sans équipes n'est pas concernée (tout le monde y est allié).
 
 ## 5. Conception offline-first (mécanique précise)
 

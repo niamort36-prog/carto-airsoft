@@ -121,22 +121,26 @@ class _GamesScreenState extends State<GamesScreen> {
     }
   }
 
-  /// Rejoindre = scanner le QR de l'organisateur (§7.2). Le grade vient du
-  /// jeton, résolu par le serveur — il n'est jamais choisi ici.
+  /// Scanner un QR : rejoindre, capturer un drapeau ou récupérer un bonus.
+  /// C'est le serveur qui reconnaît la nature du code et arbitre (§7.2,
+  /// §7.8, §7.9) — l'app se contente d'annoncer le résultat.
   Future<void> _joinGame() async {
-    final joined = await Navigator.of(context).push<
-        ({String gameId, String gameName, String role})>(
+    final outcome = await Navigator.of(context).push<ScanOutcome>(
       MaterialPageRoute(builder: (_) => const ScanScreen()),
     );
-    if (joined == null) return;
+    if (outcome == null) return;
     _reload();
     if (!mounted) return;
+    final message = switch (outcome) {
+      GameJoined(:final gameName, :final role) =>
+        '« $gameName » rejointe comme ${roleLabel(role)}',
+      ObjectiveCaptured(:final name, :final pointsAwarded, :final teamScore) =>
+        '$name capturé ! +$pointsAwarded pts — total $teamScore',
+      BonusRedeemed(:final name, :final pointsAwarded) =>
+        '$name récupéré ! +$pointsAwarded pts',
+    };
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '« ${joined.gameName} » rejointe comme ${roleLabel(joined.role)}',
-        ),
-      ),
+      SnackBar(content: Text(message)),
     );
   }
 

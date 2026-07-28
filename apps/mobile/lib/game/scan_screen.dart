@@ -34,9 +34,9 @@ class _ScanScreenState extends State<ScanScreen> {
       _error = null;
     });
     try {
-      final joined = await GamesApi.redeem(token);
+      final outcome = await GamesApi.scan(token);
       if (!mounted) return;
-      Navigator.pop(context, joined);
+      Navigator.pop(context, outcome);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -51,8 +51,8 @@ class _ScanScreenState extends State<ScanScreen> {
     if (e is GamesApiException) {
       return switch (e.statusCode) {
         404 => 'QR inconnu — vérifiez auprès de l’organisateur.',
-        410 => 'QR périmé : révoqué, expiré ou déjà utilisé.',
-        403 => e.message,
+        // 410 couvre aussi « objectif déjà tenu » et « bonus épuisé ».
+        410 => e.message,
         _ => e.message,
       };
     }
@@ -163,8 +163,8 @@ class _ScanScreenState extends State<ScanScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Text(
-                    'Visez le QR fourni par l’organisateur.\n'
-                    'Votre grade est attribué automatiquement.',
+                    'Invitation, drapeau à capturer ou bonus :\n'
+                    'le serveur reconnaît le QR et arbitre.',
                     textAlign: TextAlign.center,
                   ),
                 ),

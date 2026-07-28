@@ -14,6 +14,7 @@ import '../game/game_realtime.dart';
 import '../game/games_api.dart';
 import '../game/models.dart';
 import '../game/object_sync.dart';
+import '../game/perks_sheet.dart';
 import '../game/tracking_mode.dart';
 import '../offline/offline_sheet.dart';
 import 'map_styles.dart';
@@ -40,6 +41,8 @@ class _MapScreenState extends State<MapScreen> {
   static const _selfSource = 'self';
   static const _drawingsSource = 'drawings';
   static const _draftSource = 'draft';
+  static const _objectivesSource = 'objectives';
+  static const _contactsSource = 'contacts';
 
   /// Tailles d'icônes interpolées sur le zoom : toujours visibles de loin,
   /// confortables de près.
@@ -73,6 +76,15 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Noms des équipes et escouades, pour grouper et étiqueter les alliés.
   Map<String, String> _unitNames = const {};
+
+  /// Drapeaux de la partie (§7.8) et scores.
+  List<ObjectiveView> _objectives = const [];
+  List<TeamScore> _scores = const [];
+
+  /// Contacts révélés par un drone (§7.7) — effacés à la fin du survol :
+  /// ils n'ont aucune persistance, c'est le principe même du perk.
+  List<RevealedContact> _contacts = const [];
+  Timer? _contactsExpiry;
   final Map<String, MemberView> _members = {};
   final Map<String, MapObjectView> _objects = {};
   String? _myMembershipId;
@@ -121,11 +133,16 @@ class _MapScreenState extends State<MapScreen> {
     try {
       final perms = await GamesApi.myPermissions(widget.gameId!);
       final names = await GamesApi.unitNames(widget.gameId!);
+      final flags = await GamesApi.objectives(widget.gameId!);
+      final scores = await GamesApi.scores(widget.gameId!);
       if (mounted) {
         setState(() {
           _myPermissions = perms;
           _unitNames = names;
+          _objectives = flags;
+          _scores = scores;
         });
+        _refreshObjectives();
       }
     } catch (_) {
       // Hors réseau : aucune action de commandement n'est possible de toute
@@ -180,9 +197,53 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void dispose() {
     _heartbeat?.cancel();
+    _contactsExpiry?.cancel();
     _positionSub?.cancel();
     _realtime?.dispose();
     super.dispose();
+  }
+
+  /// Ouvre les perks. La disponibilité réelle vient du serveur ; hors
+  /// connexion le panneau l'annonce clairement (§7.7).
+  Future<void> _openPerks() async {
+    final pos = _lastPosition;
+    final result = await showModalBottomSheet<PerkActivation>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => PerksSheet(
+        gameId: widget.gameId!,
+        online: _realtimeConnected,
+        target: pos == null
+            ? null
+            : (lat: pos.latitude, lng: pos.longitude),
+      ),
+    );
+    if (result == null || !mounted) return;
+    if (result.type == 'drone') {
+      _showContacts(result.contacts, result.endsAt);
+    }
+    _showSnack(
+      result.type == 'drone'
+          ? '${result.contacts.length} contact(s) révélé(s)'
+          : '${result.jammed} drone(s) adverse(s) coupé(s)',
+    );
+  }
+
+  /// Affiche les contacts le temps du survol, puis les efface : rien de ce
+  /// que le drone a vu ne subsiste sur le téléphone.
+  void _showContacts(List<RevealedContact> contacts, DateTime endsAt) {
+    _contactsExpiry?.cancel();
+    setState(() => _contacts = contacts);
+    _refreshObjectives();
+    final remaining = endsAt.difference(DateTime.now());
+    _contactsExpiry = Timer(
+      remaining.isNegative ? const Duration(seconds: 1) : remaining,
+      () {
+        if (!mounted) return;
+        setState(() => _contacts = const []);
+        _refreshObjectives();
+      },
+    );
   }
 
   /// Les alliés, hors soi-même, en ordre hiérarchique descendant (§5) :
@@ -721,6 +782,50 @@ class _MapScreenState extends State<MapScreen> {
           iconAllowOverlap: true,
         ),
       );
+      // Drapeaux (§7.8) : couleur du camp détenteur, gris si neutre.
+      await controller.addGeoJsonSource(
+        _objectivesSource,
+        _objectivesGeoJson(),
+      );
+      await controller.addCircleLayer(
+        _objectivesSource,
+        'objectives-circles',
+        const CircleLayerProperties(
+          circleRadius: 11,
+          circleColor: ['get', 'color'],
+          circleStrokeWidth: 3,
+          circleStrokeColor: '#ffffff',
+        ),
+      );
+      await controller.addSymbolLayer(
+        _objectivesSource,
+        'objectives-labels',
+        const SymbolLayerProperties(
+          textField: ['get', 'label'],
+          textFont: ['Open Sans Semibold'],
+          textSize: 11,
+          textAnchor: 'top',
+          textOffset: [0, 1.4],
+          textColor: '#ffffff',
+          textHaloColor: '#000000',
+          textHaloWidth: 1.2,
+          textAllowOverlap: true,
+          textOptional: true,
+        ),
+      );
+      // Contacts révélés par un drone : rouge vif, éphémères.
+      await controller.addGeoJsonSource(_contactsSource, _contactsGeoJson());
+      await controller.addCircleLayer(
+        _contactsSource,
+        'contacts-circles',
+        const CircleLayerProperties(
+          circleRadius: 9,
+          circleColor: '#F44336',
+          circleOpacity: 0.85,
+          circleStrokeWidth: 2,
+          circleStrokeColor: '#ffffff',
+        ),
+      );
       // Brouillon de dessin (pointillés blancs + sommets).
       await controller.addGeoJsonSource(_draftSource, _draftGeoJson());
       await controller.addLineLayer(
@@ -745,6 +850,7 @@ class _MapScreenState extends State<MapScreen> {
       _styleReady = true;
       _refreshAllies();
       _refreshMarkers();
+      _refreshObjectives();
     } catch (e) {
       debugPrint('couches carte indisponibles: $e');
     }
@@ -784,6 +890,56 @@ class _MapScreenState extends State<MapScreen> {
     if (controller == null || !_styleReady) return;
     controller.setGeoJsonSource(_markersSource, _markersGeoJson());
     controller.setGeoJsonSource(_drawingsSource, _drawingsGeoJson());
+  }
+
+  Map<String, dynamic> _objectivesGeoJson() => {
+        'type': 'FeatureCollection',
+        'features': [
+          for (final o in _objectives)
+            {
+              'type': 'Feature',
+              'id': o.id,
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [o.lng, o.lat],
+              },
+              'properties': {
+                'label': o.captureOrder != null
+                    ? '${o.captureOrder}. ${o.name}'
+                    : o.name,
+                // Couleur du camp détenteur ; gris tant que personne ne l'a.
+                'color': o.holderTeamId == null
+                    ? '#9E9E9E'
+                    : (_scores
+                            .where((t) => t.id == o.holderTeamId)
+                            .firstOrNull
+                            ?.color ??
+                        '#9E9E9E'),
+              },
+            },
+        ],
+      };
+
+  Map<String, dynamic> _contactsGeoJson() => {
+        'type': 'FeatureCollection',
+        'features': [
+          for (final c in _contacts)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [c.lng, c.lat],
+              },
+              'properties': const <String, dynamic>{},
+            },
+        ],
+      };
+
+  void _refreshObjectives() {
+    final controller = _controller;
+    if (controller == null || !_styleReady) return;
+    controller.setGeoJsonSource(_objectivesSource, _objectivesGeoJson());
+    controller.setGeoJsonSource(_contactsSource, _contactsGeoJson());
   }
 
   Map<String, dynamic> _drawingsGeoJson() => {
@@ -1074,6 +1230,12 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: Text(widget.gameName ?? 'Carte libre'),
         actions: [
+          if (_inGame)
+            IconButton(
+              tooltip: 'Perks',
+              icon: const Icon(Icons.flight),
+              onPressed: _openPerks,
+            ),
           if (_inGame)
             IconButton(
               tooltip: 'Messagerie',
