@@ -138,12 +138,23 @@ class _MapScreenState extends State<MapScreen> {
   /// Icône d'amorçage des sources de symboles (voir [_seeded]).
   static const _seedIcon = 'infantry_hostile';
 
-  /// MapLibre Native n'affiche jamais les symboles d'une source GeoJSON
-  /// créée vide : la couche est bien là, mais elle reste muette. On amorce
-  /// donc chaque source de symboles avec un point invisible (opacité nulle,
-  /// au large du golfe de Guinée), remplacé dès la première vraie donnée.
+  /// MapLibre Native n'affiche jamais le contenu d'une source GeoJSON créée
+  /// vide : la couche est bien là, mais elle reste muette même quand les
+  /// données arrivent. On amorce donc chaque source avec une géométrie
+  /// dégénérée de chaque type, au large du golfe de Guinée (0°, 0°) et en
+  /// opacité nulle — invisible en jeu, remplacée dès la première donnée.
   static Map<String, dynamic> _seeded(Map<String, dynamic> collection) {
     if ((collection['features'] as List).isNotEmpty) return collection;
+    const properties = {
+      'icon': _seedIcon,
+      'opacity': 0.0,
+      'patternOpacity': 0.0,
+      'fillOpacity': 0.0,
+      'bearing': 0.0,
+      'label': '',
+      'pattern': '',
+      'color': '#000000',
+    };
     return {
       'type': 'FeatureCollection',
       'features': [
@@ -153,13 +164,33 @@ class _MapScreenState extends State<MapScreen> {
             'type': 'Point',
             'coordinates': [0.0, 0.0],
           },
-          'properties': {
-            'icon': _seedIcon,
-            'opacity': 0.0,
-            'bearing': 0.0,
-            'label': '',
-            'color': '#000000',
+          'properties': properties,
+        },
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'LineString',
+            'coordinates': [
+              [0.0, 0.0],
+              [0.0, 0.0],
+            ],
           },
+          'properties': properties,
+        },
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Polygon',
+            'coordinates': [
+              [
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+                [0.0, 0.0],
+              ],
+            ],
+          },
+          'properties': properties,
         },
       ],
     };
@@ -928,7 +959,10 @@ class _MapScreenState extends State<MapScreen> {
       // dessinaient plus, et retardait l'affichage de plusieurs secondes.
       await _ensureIcons([...UnitIcons.patternIconIds, _seedIcon]);
       // Zones (remplissage translucide) et lignes — sous les marqueurs.
-      await controller.addGeoJsonSource(_drawingsSource, _drawingsGeoJson());
+      await controller.addGeoJsonSource(
+        _drawingsSource,
+        _seeded(_drawingsGeoJson()),
+      );
       await controller.addFillLayer(
         _drawingsSource,
         'drawings-fill',
@@ -993,7 +1027,10 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
       // Zone survolée par un drone : cercle du rayon, couleur du camp.
-      await controller.addGeoJsonSource(_dronesSource, _dronesGeoJson());
+      await controller.addGeoJsonSource(
+        _dronesSource,
+        _seeded(_dronesGeoJson()),
+      );
       await controller.addFillLayer(
         _dronesSource,
         'drones-zone',
@@ -1031,7 +1068,7 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
       // Brouillon de dessin (pointillés blancs + sommets).
-      await controller.addGeoJsonSource(_draftSource, _draftGeoJson());
+      await controller.addGeoJsonSource(_draftSource, _seeded(_draftGeoJson()));
       await controller.addLineLayer(
         _draftSource,
         'draft-line',
@@ -1400,6 +1437,26 @@ class _MapScreenState extends State<MapScreen> {
                   },
                 };
               }(),
+          // Le tracé en cours emprunte cette couche : la sienne refuse de
+          // dessiner les lignes sur ce moteur de rendu, et un brouillon
+          // invisible rend le dessin impraticable.
+          if (_drawing && _draftPoints.length >= 2)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'LineString',
+                'coordinates': [
+                  for (final p in _draftPoints) [p.longitude, p.latitude],
+                ],
+              },
+              'properties': const {
+                'color': '#FFFFFF',
+                'pattern': '',
+                'opacity': 0.9,
+                'patternOpacity': 0.0,
+                'fillOpacity': 0.0,
+              },
+            },
         ],
       };
 
@@ -1432,7 +1489,9 @@ class _MapScreenState extends State<MapScreen> {
   void _refreshDraft() {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
+    // Les sommets d'un côté, le trait qui les relie de l'autre.
     controller.setGeoJsonSource(_draftSource, _draftGeoJson());
+    controller.setGeoJsonSource(_drawingsSource, _drawingsGeoJson());
   }
 
   void _onMapClick(Point<double> point, LatLng latLng) {
@@ -1491,6 +1550,14 @@ class _MapScreenState extends State<MapScreen> {
     );
     if (choice == null) return;
     setState(() => _drawPattern = choice.iconId);
+  }
+
+  /// Retire le dernier point posé — un pas de travers ne doit pas coûter
+  /// tout le tracé.
+  void _undoPoint() {
+    if (_draftPoints.isEmpty) return;
+    setState(() => _draftPoints.removeLast());
+    _refreshDraft();
   }
 
   void _cancelDrawing() {
@@ -2108,77 +2175,27 @@ class _MapScreenState extends State<MapScreen> {
                 onClose: () => setState(() => _guidance = null),
               ),
             ),
-          // Barre de dessin : au-dessus du menu en portrait pour ne pas se
-          // marcher dessus.
+          // Panneau de tracé : posé au-dessus du menu, jamais dessous, et
+          // centré pour rester atteignable au pouce.
           if (_drawing)
             Positioned(
               left: 0,
               right: 0,
               bottom: landscape ? 16 : (_railExpanded ? 120 : 88),
-              // Défilement horizontal : sur écran étroit les libellés
-              // restent tous atteignables.
-              child: _bottomBar(
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          '${_draftPoints.length} pt${_draftPoints.length > 1 ? 's' : ''}',
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(width: 8),
-                        // Motif habillant le tracé (barbelés, fortifié) —
-                        // appui long pour revenir au trait uni.
-                        OutlinedButton.icon(
-                          icon: _drawPattern == null
-                              ? const Icon(Icons.gesture)
-                              : Image.asset(
-                                  UnitIcons.assetKey(_drawPattern!),
-                                  width: 22,
-                                  height: 22,
-                                ),
-                          label: Text(
-                            _drawPattern == null
-                                ? 'Motif'
-                                : UnitIcons.labelOf(_drawPattern!),
-                          ),
-                          onPressed: _pickPattern,
-                          onLongPress: () =>
-                              setState(() => _drawPattern = null),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton.icon(
-                          icon: const Icon(Icons.close),
-                          label: const Text('Annuler'),
-                          onPressed: _cancelDrawing,
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.timeline),
-                          label: const Text('Ligne'),
-                          onPressed: _draftPoints.length >= 2
-                              ? () => _finishDrawing('line')
-                              : null,
-                        ),
-                        const SizedBox(width: 8),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.pentagon_outlined),
-                          label: const Text('Zone'),
-                          onPressed: _draftPoints.length >= 3
-                              ? () => _finishDrawing('zone')
-                              : null,
-                        ),
-                        const SizedBox(width: 8),
-                        // Deux taps suffisent : centre puis rayon.
-                        FilledButton.icon(
-                          icon: const Icon(Icons.hexagon_outlined),
-                          label: const Text('Octogone'),
-                          onPressed: _draftPoints.length >= 2
-                              ? () => _finishDrawing('octagon')
-                              : null,
-                        ),
-                      ],
-                    ),
+              child: Align(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: DrawingPanel(
+                    pointCount: _draftPoints.length,
+                    pattern: _drawPattern,
+                    onPickPattern: _pickPattern,
+                    onClearPattern: () => setState(() => _drawPattern = null),
+                    onUndo: _undoPoint,
+                    onCancel: _cancelDrawing,
+                    onFinish: _finishDrawing,
                   ),
+                ),
+              ),
             ),
         ],
       ),
@@ -2188,12 +2205,4 @@ class _MapScreenState extends State<MapScreen> {
   static const _compact =
       ButtonStyle(visualDensity: VisualDensity.compact);
 
-  Widget _bottomBar({required Widget child}) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: child,
-        ),
-      );
 }

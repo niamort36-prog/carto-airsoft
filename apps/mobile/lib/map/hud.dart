@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 
 import 'grid_ref.dart';
 import 'map_styles.dart';
+import 'unit_icons.dart';
 
 /// Bandeau supérieur, façon terminal tactique : batterie, cap, heure,
 /// coordonnées de quadrillage, réseau. Pas de nom de partie — l'écran de
@@ -394,6 +395,222 @@ class _RailButton extends StatelessWidget {
                   ],
                 ],
               ),
+      ),
+    );
+  }
+}
+
+/// Panneau de tracé. Posé sur un fond opaque comme le reste de l'habillage :
+/// les boutons transparents sur la carte devenaient illisibles dès que le
+/// fond était clair. Tout tient sans défilement, et le dernier point posé
+/// peut être repris — sur le terrain on se trompe d'un pas.
+class DrawingPanel extends StatelessWidget {
+  const DrawingPanel({
+    super.key,
+    required this.pointCount,
+    required this.pattern,
+    required this.onPickPattern,
+    required this.onClearPattern,
+    required this.onUndo,
+    required this.onCancel,
+    required this.onFinish,
+  });
+
+  final int pointCount;
+
+  /// Motif habillant le tracé, ou null pour un trait uni.
+  final String? pattern;
+  final VoidCallback onPickPattern;
+  final VoidCallback onClearPattern;
+  final VoidCallback onUndo;
+  final VoidCallback onCancel;
+  final ValueChanged<String> onFinish;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 460),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.78),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              // Motif : aperçu de l'image, et croix pour revenir au trait uni.
+              Flexible(
+                child: InkWell(
+                  onTap: onPickPattern,
+                  borderRadius: BorderRadius.circular(8),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (pattern == null)
+                          const Icon(Icons.gesture,
+                              size: 20, color: Colors.white)
+                        else
+                          Image.asset(
+                            UnitIcons.assetKey(pattern!),
+                            width: 26,
+                            height: 20,
+                            fit: BoxFit.contain,
+                          ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            pattern == null
+                                ? 'Trait uni'
+                                : UnitIcons.labelOf(pattern!),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (pattern != null)
+                          InkWell(
+                            onTap: onClearPattern,
+                            child: const Padding(
+                              padding: EdgeInsets.only(left: 4),
+                              child: Icon(Icons.close,
+                                  size: 15, color: Colors.white54),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$pointCount pt${pointCount > 1 ? 's' : ''}',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Retirer le dernier point',
+                visualDensity: VisualDensity.compact,
+                onPressed: pointCount > 0 ? onUndo : null,
+                icon: const Icon(Icons.undo, size: 20),
+                color: Colors.white,
+                disabledColor: Colors.white24,
+              ),
+              IconButton(
+                tooltip: 'Quitter le tracé',
+                visualDensity: VisualDensity.compact,
+                onPressed: onCancel,
+                icon: const Icon(Icons.close, size: 20),
+                color: Colors.white,
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                child: _ShapeButton(
+                  icon: Icons.timeline,
+                  label: 'Ligne',
+                  enabled: pointCount >= 2,
+                  color: scheme.primary,
+                  onPressed: () => onFinish('line'),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _ShapeButton(
+                  icon: Icons.pentagon_outlined,
+                  label: 'Zone',
+                  enabled: pointCount >= 3,
+                  color: scheme.primary,
+                  onPressed: () => onFinish('zone'),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _ShapeButton(
+                  icon: Icons.hexagon_outlined,
+                  label: 'Octogone',
+                  enabled: pointCount >= 2,
+                  color: scheme.primary,
+                  onPressed: () => onFinish('octagon'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            pointCount == 0
+                ? 'Touchez la carte pour poser des points'
+                : 'Octogone : 1er point = centre, 2e = rayon',
+            style: const TextStyle(color: Colors.white60, fontSize: 11),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShapeButton extends StatelessWidget {
+  const _ShapeButton({
+    required this.icon,
+    required this.label,
+    required this.enabled,
+    required this.color,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool enabled;
+  final Color color;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: enabled ? color : Colors.white10,
+      borderRadius: BorderRadius.circular(9),
+      child: InkWell(
+        onTap: enabled ? onPressed : null,
+        borderRadius: BorderRadius.circular(9),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 20,
+                color: enabled ? Colors.black : Colors.white30,
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: enabled ? Colors.black : Colors.white30,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
