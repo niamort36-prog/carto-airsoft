@@ -35,6 +35,9 @@ class GameRealtime {
   /// Événement de perk : activation (avec sa zone) ou brouillage.
   void Function(Map<String, dynamic> event)? onPerkEvent;
 
+  /// Un allié a quitté la partie : à retirer de la liste et de la carte.
+  void Function(String membershipId)? onMemberLeft;
+
   sio.Socket? _socket;
 
   void connect() {
@@ -70,6 +73,12 @@ class GameRealtime {
     socket.on('member:update', (dynamic data) {
       if (data is Map) {
         onMemberUpdate(MemberView.fromJson(data.cast<String, dynamic>()));
+      }
+    });
+
+    socket.on('member:left', (dynamic data) {
+      if (data is Map && data['membershipId'] is String) {
+        onMemberLeft?.call(data['membershipId'] as String);
       }
     });
 

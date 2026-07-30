@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -43,6 +45,18 @@ export class GamesController {
     @Param('id', ParseUUIDPipe) gameId: string,
   ) {
     return this.gamesService.joinGame(auth, gameId);
+  }
+
+  @Post(':id/leave')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Quitter une partie rejointe (le créateur ne peut pas quitter)',
+  })
+  leave(
+    @CurrentUser() auth: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) gameId: string,
+  ) {
+    return this.gamesService.leaveGame(auth, gameId);
   }
 
   @Get(':id/members')

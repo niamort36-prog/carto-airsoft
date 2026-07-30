@@ -227,6 +227,7 @@ class _MapScreenState extends State<MapScreen> {
         },
       )
         ..onPerkEvent = _onPerkEvent
+        ..onMemberLeft = _onMemberLeft
         ..connect();
       _loadObjects();
       _loadPermissions();
@@ -511,6 +512,25 @@ class _MapScreenState extends State<MapScreen> {
       }
     });
     _refreshAllies();
+  }
+
+  /// Un allié a quitté : il disparaît de la liste et de la carte sans
+  /// attendre une reconnexion.
+  void _onMemberLeft(String membershipId) {
+    // Mon propre départ m'est aussi diffusé : inutile de me l'annoncer.
+    if (!mounted ||
+        membershipId == _myMembershipId ||
+        !_members.containsKey(membershipId)) {
+      return;
+    }
+    final gone = _members[membershipId]!;
+    setState(() => _members.remove(membershipId));
+    // La visée en cours vers lui n'a plus d'objet.
+    if (_guidance?.label == gone.displayName) {
+      setState(() => _guidance = null);
+    }
+    _refreshAllies();
+    _showSnack('${gone.displayName} a quitté la partie');
   }
 
   Future<void> _requestLocation() async {
@@ -2037,11 +2057,84 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
               ),
+            if (_inGame) ...[
+              const Divider(height: 8),
+              // Refermer la carte sans rien changer : depuis que le bandeau
+              // a remplacé la barre d'application, c'est la sortie explicite.
+              ListTile(
+                leading: const Icon(Icons.map_outlined),
+                title: const Text('Revenir aux parties'),
+                subtitle: const Text('Vous restez membre de la partie'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  Navigator.of(context).maybePop();
+                },
+              ),
+              ListTile(
+                leading: Icon(
+                  Icons.logout,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  'Quitter la partie',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                subtitle: const Text('Il faudra un nouveau QR pour revenir'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _confirmLeaveGame();
+                },
+              ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  /// Quitter pour de bon : on demande confirmation, le serveur tranche
+  /// (le créateur d'une partie ne peut pas quitter la sienne).
+  Future<void> _confirmLeaveGame() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Quitter la partie ?'),
+        content: Text(
+          'Vous ne verrez plus ${widget.gameName ?? 'cette partie'} ni vos '
+          'alliés, et vous cesserez de partager votre position. '
+          'Il faudra scanner un nouveau QR pour revenir.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Quitter'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await GamesApi.leaveGame(widget.gameId!);
+      if (!mounted) return;
+      Navigator.of(context).maybePop();
+    } catch (e) {
+      if (!mounted) return;
+      // Refus du serveur (créateur) ou réseau absent : on reste sur place.
+      _showSnack(_errorMessage(e));
+    }
+  }
+
+  /// Message serveur si on en a un, sinon un repli lisible.
+  static String _errorMessage(Object error) =>
+      error is GamesApiException ? error.message : 'Action impossible';
 
   /// Référence complète du point où je me trouve — celle qu'on donne à la
   /// radio quand le carroyage court ne suffit pas.

@@ -60,7 +60,12 @@ class _GamesScreenState extends State<GamesScreen> {
   // l'arbitre). Les boutons réapparaissent au retour du réseau.
 
   void _reload() {
-    setState(() => _games = _load());
+    // Forme bloc obligatoire : une lambda fléchée renverrait le Future de
+    // `_load()`, ce que `setState` rejette — l'affectation passait, mais la
+    // reconstruction n'était jamais demandée et la liste restait figée.
+    setState(() {
+      _games = _load();
+    });
   }
 
   Future<void> _createGame() async {
@@ -154,12 +159,19 @@ class _GamesScreenState extends State<GamesScreen> {
     );
   }
 
-  void _openMap({GameSummary? game}) {
-    Navigator.of(context).push(
+  Future<void> _openMap({GameSummary? game}) async {
+    await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => MapScreen(gameId: game?.id, gameName: game?.name),
       ),
     );
+    // Au retour, la liste peut avoir changé — une partie quittée depuis la
+    // carte doit en disparaître tout de suite.
+    if (mounted) {
+      setState(() {
+        _games = _load();
+      });
+    }
   }
 
   @override

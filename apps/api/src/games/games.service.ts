@@ -58,6 +58,12 @@ export interface MemberUpdatedEvent {
   member: MemberView;
 }
 
+export const MEMBER_LEFT_EVENT = 'member.left';
+export interface MemberLeftEvent {
+  gameId: string;
+  membershipId: string;
+}
+
 @Injectable()
 export class GamesService {
   constructor(
@@ -168,6 +174,43 @@ export class GamesService {
       throw new ForbiddenException('Vous avez été exclu de cette partie');
     }
     return membership;
+  }
+
+  /**
+   * Quitter une partie qu'on avait rejointe. La ligne d'appartenance n'est
+   * pas supprimée mais datée (`leftAt`) : l'historique de la partie reste
+   * cohérent, et un nouveau QR permet de revenir.
+   *
+   * Le créateur, lui, ne peut pas quitter la sienne : sa partie disparaîtrait
+   * de sa liste alors qu'il en reste propriétaire, sans moyen d'y revenir.
+   * Il la remplace en en créant une autre (§ une seule partie à la fois).
+   */
+  async leaveGame(auth: AuthenticatedUser, gameId: string): Promise<void> {
+    const user = await this.usersService.getOrCreate(auth);
+    const [game] = await this.db
+      .select()
+      .from(games)
+      .where(eq(games.id, gameId));
+    if (!game) throw new NotFoundException('Partie introuvable');
+    if (game.ownerUserId === user.id) {
+      throw new ForbiddenException(
+        'Vous êtes le créateur de cette partie : créez-en une nouvelle pour '
+        + 'la remplacer',
+      );
+    }
+
+    const membership = await this.assertActiveMember(user.id, gameId);
+    await this.db
+      .update(memberships)
+      .set({ leftAt: new Date(), isConnected: false })
+      .where(eq(memberships.id, membership.id));
+
+    // Les alliés encore en jeu doivent le voir partir tout de suite, sans
+    // attendre une reconnexion.
+    this.events.emit(MEMBER_LEFT_EVENT, {
+      gameId,
+      membershipId: membership.id,
+    } satisfies MemberLeftEvent);
   }
 
   async getMembers(

@@ -46,6 +46,16 @@ class GamesApi {
     _ensureOk(res);
   }
 
+  /// Quitter une partie rejointe. Le serveur refuse au créateur de quitter
+  /// la sienne — le message d'erreur est remonté tel quel.
+  static Future<void> leaveGame(String gameId) async {
+    final res = await http.post(
+      _uri('/games/$gameId/leave'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+  }
+
   /// Nomination (commandant) ou changement d'insigne (gradés) — validé serveur.
   static Future<void> updateMember(
     String gameId,

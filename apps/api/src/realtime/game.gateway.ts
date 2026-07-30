@@ -15,7 +15,9 @@ import { SupabaseTokenService } from '../auth/supabase-token.service';
 import { LIFE_STATUSES, type LifeStatus } from '../games/dto';
 import {
   GamesService,
+  MEMBER_LEFT_EVENT,
   MEMBER_UPDATED_EVENT,
+  type MemberLeftEvent,
   type MemberUpdatedEvent,
   type MemberView,
 } from '../games/games.service';
@@ -209,6 +211,14 @@ export class GameGateway implements OnGatewayInit, OnGatewayDisconnect {
       .to(`game:${gameId}`)
       .except(camp)
       .emit('member:update', GamesService.maskPosition(member));
+  }
+
+  /** Un joueur quitte : les autres le retirent de leur liste tout de suite. */
+  @OnEvent(MEMBER_LEFT_EVENT)
+  onMemberLeft(event: MemberLeftEvent): void {
+    this.server
+      .to(`game:${event.gameId}`)
+      .emit('member:left', { membershipId: event.membershipId });
   }
 
   /** Room du camp : l'équipe, ou le groupe des non-affectés de la partie. */
