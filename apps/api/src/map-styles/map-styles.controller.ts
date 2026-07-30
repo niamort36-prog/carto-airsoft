@@ -11,7 +11,12 @@ import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
  * de tuiles doivent rester identiques des deux côtés (cache partagé).
  * Route publique : un style de carte n'est pas une donnée sensible.
  */
-const ALLOWED_FILES = new Set(['osm.json', 'plan_ign.json', 'ortho_ign.json']);
+const ALLOWED_FILES = new Set([
+  'osm.json',
+  'plan_ign.json',
+  'ortho_ign.json',
+  'relief.json',
+]);
 
 @ApiTags('map-styles')
 @Controller('map-styles')

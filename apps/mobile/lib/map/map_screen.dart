@@ -2,8 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:math' show Point;
 
+import 'package:battery_plus/battery_plus.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:maplibre_gl/maplibre_gl.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -18,6 +21,9 @@ import '../game/object_sync.dart';
 import '../game/perks_sheet.dart';
 import '../game/tracking_mode.dart';
 import '../offline/offline_sheet.dart';
+import 'elevation.dart';
+import 'grid_ref.dart';
+import 'hud.dart';
 import 'map_styles.dart';
 import 'unit_icons.dart';
 import 'unit_picker_sheet.dart';
@@ -106,6 +112,25 @@ class _MapScreenState extends State<MapScreen> {
   Position? _lastPosition;
   TrackingMode _trackingMode = TrackingMode.balanced;
 
+  // — Bandeau d'état et habillage (§ mise en page) —————————————————
+  final Battery _battery = Battery();
+  int? _batteryLevel;
+  bool _batteryCharging = false;
+  Timer? _clockTicker;
+  String _clock = '--:--';
+  StreamSubscription<CompassEvent>? _compassSub;
+  double? _heading;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+  bool _networkOnline = true;
+
+  /// Menu d'outils déplié, et point actuellement visé.
+  bool _railExpanded = false;
+  GuidanceTarget? _guidance;
+
+  /// Altitude du terrain sous mes pieds, même référence que celle du point
+  /// visé — c'est ce qui rend le dénivelé annoncé honnête.
+  double? _myElevation;
+
   /// Mode dessin (§ Phase 2) : chaque tap ajoute un sommet.
   bool _drawing = false;
   final List<LatLng> _draftPoints = [];
@@ -166,6 +191,7 @@ class _MapScreenState extends State<MapScreen> {
     super.initState();
     _loadStyle();
     _requestLocation();
+    _startStatusBar();
     if (_inGame) {
       _syncService = ObjectSyncService(widget.gameId!);
       _realtime = GameRealtime(
@@ -183,6 +209,68 @@ class _MapScreenState extends State<MapScreen> {
         ..connect();
       _loadObjects();
       _loadPermissions();
+    }
+  }
+
+  /// Alimente le bandeau : horloge, batterie, boussole, réseau. Tout est
+  /// local — le bandeau reste exact même sans la moindre couverture.
+  void _startStatusBar() {
+    void tickClock() {
+      final now = DateTime.now();
+      final label = '${now.hour.toString().padLeft(2, '0')}:'
+          '${now.minute.toString().padLeft(2, '0')}';
+      if (label != _clock && mounted) setState(() => _clock = label);
+    }
+
+    tickClock();
+    var ticks = 0;
+    _clockTicker = Timer.periodic(const Duration(seconds: 5), (_) {
+      tickClock();
+      // La batterie ne bouge pas à la seconde : une lecture sur six suffit
+      // et épargne autant d'allers-retours vers la plateforme.
+      if (ticks++ % 6 == 0) _refreshBattery();
+    });
+    _refreshBattery();
+
+    // Boussole : le cap du boîtier, pas la route suivie — c'est celui-là
+    // qu'on lit en s'orientant, à l'arrêt comme en mouvement.
+    _compassSub = FlutterCompass.events?.listen((event) {
+      final heading = event.heading;
+      if (heading == null || !mounted) return;
+      final normalized = (heading % 360 + 360) % 360;
+      // Seuil : évite de reconstruire le bandeau à chaque micro-oscillation.
+      if (_heading != null && (normalized - _heading!).abs() < 2) return;
+      setState(() => _heading = normalized);
+    });
+
+    _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
+      final online =
+          results.any((r) => r != ConnectivityResult.none);
+      if (mounted && online != _networkOnline) {
+        setState(() => _networkOnline = online);
+      }
+    });
+    Connectivity().checkConnectivity().then((results) {
+      final online = results.any((r) => r != ConnectivityResult.none);
+      if (mounted) setState(() => _networkOnline = online);
+    });
+  }
+
+  Future<void> _refreshBattery() async {
+    try {
+      final level = await _battery.batteryLevel;
+      final state = await _battery.batteryState;
+      if (!mounted) return;
+      final charging = state == BatteryState.charging ||
+          state == BatteryState.full;
+      if (level != _batteryLevel || charging != _batteryCharging) {
+        setState(() {
+          _batteryLevel = level;
+          _batteryCharging = charging;
+        });
+      }
+    } catch (_) {
+      // Certaines ROM refusent la lecture : le bandeau affiche « -- ».
     }
   }
 
@@ -256,7 +344,10 @@ class _MapScreenState extends State<MapScreen> {
     _heartbeat?.cancel();
     _contactsExpiry?.cancel();
     _droneTicker?.cancel();
+    _clockTicker?.cancel();
     _positionSub?.cancel();
+    _compassSub?.cancel();
+    _connectivitySub?.cancel();
     _realtime?.dispose();
     super.dispose();
   }
@@ -424,6 +515,7 @@ class _MapScreenState extends State<MapScreen> {
       _lastPosition = pos;
       _realtime?.sendPosition(pos.latitude, pos.longitude);
       _refreshAllies();
+      _refreshMyElevation(pos);
       await _controller?.animateCamera(
         CameraUpdate.newLatLngZoom(LatLng(pos.latitude, pos.longitude), 15),
       );
@@ -452,6 +544,7 @@ class _MapScreenState extends State<MapScreen> {
         _lastPosition = pos;
         _realtime?.sendPosition(pos.latitude, pos.longitude);
         _refreshAllies(); // met aussi à jour mon insigne sur la carte
+        _refreshMyElevation(pos);
       },
       onError: (_) {},
     );
@@ -464,6 +557,36 @@ class _MapScreenState extends State<MapScreen> {
         if (p != null) _realtime?.sendPosition(p.latitude, p.longitude);
       },
     );
+  }
+
+  /// Altitude du terrain sous ma position. Volontairement lue dans les
+  /// mêmes tuiles que celle du point visé : le dénivelé annoncé compare
+  /// alors deux mesures de même nature.
+  Future<void> _refreshMyElevation(Position pos) async {
+    final elevation =
+        await ElevationService.instance.at(pos.latitude, pos.longitude);
+    if (!mounted || elevation == null) return;
+    setState(() => _myElevation = elevation);
+  }
+
+  /// Vise un point : la boîte translucide s'ouvre et se met à jour au fil
+  /// de mes déplacements.
+  Future<void> _guideTo(String label, double lat, double lng) async {
+    setState(() {
+      _guidance = GuidanceTarget(label: label, lat: lat, lng: lng);
+    });
+    final elevation = await ElevationService.instance.at(lat, lng);
+    if (!mounted || elevation == null) return;
+    final current = _guidance;
+    if (current == null || current.lat != lat || current.lng != lng) return;
+    setState(() {
+      _guidance = GuidanceTarget(
+        label: label,
+        lat: lat,
+        lng: lng,
+        elevation: elevation,
+      );
+    });
   }
 
   /// Choix du compromis batterie/précision (§9), appliqué immédiatement.
@@ -666,6 +789,15 @@ class _MapScreenState extends State<MapScreen> {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (a.lat != null)
+            IconButton(
+              tooltip: 'Diriger vers',
+              icon: const Icon(Icons.navigation_outlined),
+              onPressed: () {
+                Navigator.pop(context);
+                _guideTo(a.displayName, a.lat!, a.lng!);
+              },
+            ),
           if (a.lat != null)
             IconButton(
               tooltip: 'Centrer',
@@ -1450,6 +1582,8 @@ class _MapScreenState extends State<MapScreen> {
       if (m.lat == null || m.lng == null) continue;
       features.add({
         'type': 'Feature',
+        // Identifiant repris au tap : diriger vers l'allié touché.
+        'id': m.membershipId,
         'geometry': {
           'type': 'Point',
           'coordinates': [m.lng, m.lat],
@@ -1562,6 +1696,11 @@ class _MapScreenState extends State<MapScreen> {
   ) {
     // Un déplacement en cours : le tap sert à reposer, pas à ouvrir la fiche.
     if (_moving != null) return;
+    if (layerId == 'allies-icons') {
+      final ally = _members[id];
+      if (ally?.lat != null) _guideTo(ally!.displayName, ally.lat!, ally.lng!);
+      return;
+    }
     if (layerId != _markersLayer && !layerId.startsWith('drawings-')) return;
     final object = _objects[id];
     if (object == null) return;
@@ -1612,6 +1751,23 @@ class _MapScreenState extends State<MapScreen> {
                   'posé par ${author?.displayName ?? 'un allié'} '
                   'à ${_timeLabel(object.createdAt)}',
                 ),
+              ),
+
+              // Se diriger : ouvert à tous, même sans droit de modification.
+              OutlinedButton.icon(
+                icon: const Icon(Icons.navigation_outlined),
+                label: const Text('Diriger'),
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  _guideTo(
+                    icon != null
+                        ? UnitIcons.labelOf(icon)
+                        : (object.properties['unitLabel'] as String?) ??
+                            'Marqueur',
+                    object.lat,
+                    object.lng,
+                  );
+                },
               ),
 
               if (canEdit) ...[
@@ -1753,66 +1909,152 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.gameName ?? 'Carte libre'),
-        actions: [
-          if (_inGame)
-            IconButton(
-              tooltip: 'Perks',
-              icon: const Icon(Icons.flight),
-              onPressed: _openPerks,
-            ),
-          if (_inGame)
-            IconButton(
-              tooltip: 'Messagerie',
-              icon: const Icon(Icons.forum_outlined),
-              onPressed: () => Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => ChatScreen(
-                    gameId: widget.gameId!,
-                    realtime: _realtime,
-                    myMembershipId: _myMembershipId,
-                  ),
+  /// Entrées du menu d'outils, dans l'ordre d'usage sur le terrain.
+  List<ToolAction> _tools() => [
+        ToolAction(
+          icon: Icons.my_location,
+          label: 'Ma position',
+          onPressed: _requestLocation,
+        ),
+        if (_inGame)
+          ToolAction(
+            icon: Icons.flight,
+            label: 'Perks',
+            onPressed: _openPerks,
+          ),
+        if (_inGame)
+          ToolAction(
+            icon: _drawing ? Icons.polyline : Icons.polyline_outlined,
+            label: 'Tracé',
+            selected: _drawing,
+            onPressed: () {
+              if (_drawing) {
+                _cancelDrawing();
+              } else {
+                setState(() => _drawing = true);
+              }
+            },
+          ),
+        if (_inGame)
+          ToolAction(
+            icon: _realtimeConnected ? Icons.people : Icons.cloud_off,
+            label: 'Alliés',
+            badge: '${_allies.length}',
+            onPressed: _showAllies,
+          ),
+        if (_inGame)
+          ToolAction(
+            icon: Icons.forum_outlined,
+            label: 'Messages',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => ChatScreen(
+                  gameId: widget.gameId!,
+                  realtime: _realtime,
+                  myMembershipId: _myMembershipId,
                 ),
               ),
             ),
-          if (_inGame)
-            IconButton(
-              tooltip: _drawing ? 'Quitter le dessin' : 'Dessiner zone/ligne',
-              isSelected: _drawing,
-              icon: const Icon(Icons.polyline_outlined),
-              selectedIcon: const Icon(Icons.polyline),
-              onPressed: () {
-                if (_drawing) {
-                  _cancelDrawing();
-                } else {
-                  setState(() => _drawing = true);
-                }
+          ),
+        ToolAction(
+          icon: Icons.settings_outlined,
+          label: 'Réglages',
+          onPressed: _openSettings,
+        ),
+      ];
+
+  /// Réglages : ce qui se règle une fois puis s'oublie. Sorti du bandeau
+  /// pour ne laisser à l'écran que ce qu'on lit en jouant.
+  Future<void> _openSettings() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_inGame)
+              ListTile(
+                leading: Icon(switch (_trackingMode) {
+                  TrackingMode.precise => Icons.battery_alert,
+                  TrackingMode.balanced => Icons.battery_5_bar,
+                  TrackingMode.eco => Icons.battery_saver,
+                }),
+                title: const Text('Suivi de position'),
+                subtitle: Text(_trackingMode.label),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _pickTrackingMode();
+                },
+              ),
+            ListTile(
+              leading: const Icon(Icons.download_for_offline_outlined),
+              title: const Text('Cartes hors-ligne'),
+              subtitle: const Text('Télécharger la zone de jeu'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _openOfflineSheet();
               },
             ),
-          if (_inGame)
-            Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: ActionChip(
-                avatar: Icon(
-                  _realtimeConnected ? Icons.people : Icons.cloud_off,
-                  size: 18,
+            if (_inGame)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'Mon statut',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    SegmentedButton<LifeStatus>(
+                      showSelectedIcon: false,
+                      style: _compact,
+                      segments: [
+                        for (final s in LifeStatus.values)
+                          ButtonSegment(value: s, label: Text(s.label)),
+                      ],
+                      selected: {_myStatus},
+                      onSelectionChanged: (sel) {
+                        setState(() => _myStatus = sel.first);
+                        _realtime?.sendStatus(sel.first);
+                        Navigator.pop(sheetContext);
+                      },
+                    ),
+                  ],
                 ),
-                label: Text('${_allies.length}'),
-                tooltip: 'Alliés dans la partie',
-                onPressed: _showAllies,
               ),
-            ),
-          IconButton(
-            tooltip: 'Cartes hors-ligne',
-            icon: const Icon(Icons.download_for_offline_outlined),
-            onPressed: _openOfflineSheet,
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  /// Référence complète du point où je me trouve — celle qu'on donne à la
+  /// radio quand le carroyage court ne suffit pas.
+  void _showFullGrid() {
+    final pos = _lastPosition;
+    if (pos == null) {
+      _showSnack('Position inconnue');
+      return;
+    }
+    final ref = toMgrs(pos.latitude, pos.longitude);
+    _showSnack(
+      ref == null
+          ? '${pos.latitude.toStringAsFixed(5)}, '
+              '${pos.longitude.toStringAsFixed(5)}'
+          : '${ref.full(precision: 5)}  ·  '
+              '${pos.latitude.toStringAsFixed(5)}, '
+              '${pos.longitude.toStringAsFixed(5)}',
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final landscape =
+        MediaQuery.orientationOf(context) == Orientation.landscape;
+
+    return Scaffold(
       body: Stack(
         children: [
           // Pas de `key` dépendant du fond : le plugin change le style en
@@ -1834,33 +2076,102 @@ class _MapScreenState extends State<MapScreen> {
               onMapLongClick: _onMapLongClick,
               onMapClick: _onMapClick,
             ),
+          // Bandeau d'état, collé en haut : batterie, cap, heure,
+          // coordonnées, réseau.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TacticalTopBar(
+              batteryLevel: _batteryLevel,
+              batteryCharging: _batteryCharging,
+              heading: _heading,
+              clock: _clock,
+              grid: gridLabel(
+                _lastPosition?.latitude,
+                _lastPosition?.longitude,
+              ),
+              online: _networkOnline,
+              linked: !_inGame || _realtimeConnected,
+              onGridTap: _showFullGrid,
+            ),
+          ),
           if (_inGame && !_realtimeConnected)
             Positioned(
-              top: 0,
+              top: MediaQuery.paddingOf(context).top + 34,
               left: 0,
               right: 0,
               child: Container(
                 color: Colors.orange.shade900,
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 child: const Text(
                   'Hors ligne — dernières positions connues',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                 ),
               ),
             ),
+          // Fond de carte : bouton d'angle, sous le bandeau.
           Positioned(
-            left: 0,
-            right: 0,
-            bottom: 16,
-            // Défilement horizontal : sur écran étroit les libellés restent
-            // tous atteignables au lieu d'être rognés par le bouton flottant.
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_drawing)
-                  _bottomBar(
+            top: MediaQuery.paddingOf(context).top + 40,
+            left: 10,
+            child: BasemapButton(
+              current: _basemap,
+              onSelected: (m) {
+                setState(() => _basemap = m);
+                _loadStyle();
+              },
+            ),
+          ),
+          // Menu d'outils : rail à droite en paysage, barre basse en
+          // portrait. Jamais plus du quart de l'écran.
+          if (landscape)
+            Positioned(
+              right: 8,
+              top: MediaQuery.paddingOf(context).top + 40,
+              child: ToolRail(
+                actions: _tools(),
+                expanded: _railExpanded,
+                landscape: true,
+                onToggle: () => setState(() => _railExpanded = !_railExpanded),
+              ),
+            )
+          else
+            Positioned(
+              right: 8,
+              bottom: 16,
+              child: ToolRail(
+                actions: _tools(),
+                expanded: _railExpanded,
+                landscape: false,
+                onToggle: () => setState(() => _railExpanded = !_railExpanded),
+              ),
+            ),
+          // Boîte de visée : coordonnées, distance, dénivelé, azimut.
+          // En portrait elle se pose au-dessus du menu, qui occupe le bas.
+          if (_guidance != null)
+            Positioned(
+              left: 10,
+              bottom: landscape ? 16 : (_railExpanded ? 120 : 88),
+              child: GuidanceBox(
+                target: _guidance!,
+                myLat: _lastPosition?.latitude,
+                myLng: _lastPosition?.longitude,
+                myElevation: _myElevation,
+                onClose: () => setState(() => _guidance = null),
+              ),
+            ),
+          // Barre de dessin : au-dessus du menu en portrait pour ne pas se
+          // marcher dessus.
+          if (_drawing)
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: landscape ? 16 : (_railExpanded ? 120 : 88),
+              // Défilement horizontal : sur écran étroit les libellés
+              // restent tous atteignables.
+              child: _bottomBar(
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -1922,68 +2233,8 @@ class _MapScreenState extends State<MapScreen> {
                       ],
                     ),
                   ),
-                if (_inGame && !_drawing)
-                  _bottomBar(
-                    child: SegmentedButton<LifeStatus>(
-                      showSelectedIcon: false,
-                      style: _compact,
-                      segments: [
-                        for (final s in LifeStatus.values)
-                          ButtonSegment(value: s, label: Text(s.label)),
-                      ],
-                      selected: {_myStatus},
-                      onSelectionChanged: (sel) {
-                        setState(() => _myStatus = sel.first);
-                        _realtime?.sendStatus(sel.first);
-                      },
-                    ),
-                  ),
-                _bottomBar(
-                  child: SegmentedButton<MapBasemap>(
-                    showSelectedIcon: false,
-                    style: _compact,
-                    segments: [
-                      for (final m in MapBasemap.values)
-                        ButtonSegment(value: m, label: Text(m.label)),
-                    ],
-                    selected: {_basemap},
-                    onSelectionChanged: (s) {
-                      setState(() => _basemap = s.first);
-                      _loadStyle();
-                    },
-                  ),
-                ),
-              ],
             ),
-          ),
         ],
-      ),
-      // Remonté au-dessus des sélecteurs du bas.
-      floatingActionButton: Padding(
-        padding: EdgeInsets.only(bottom: _inGame ? 104 : 56),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_inGame)
-              FloatingActionButton.small(
-                heroTag: 'tracking',
-                tooltip: 'Suivi de position (batterie)',
-                onPressed: _pickTrackingMode,
-                child: Icon(switch (_trackingMode) {
-                  TrackingMode.precise => Icons.battery_alert,
-                  TrackingMode.balanced => Icons.battery_5_bar,
-                  TrackingMode.eco => Icons.battery_saver,
-                }),
-              ),
-            const SizedBox(height: 8),
-            FloatingActionButton(
-              heroTag: 'locate',
-              tooltip: 'Ma position',
-              onPressed: _requestLocation,
-              child: const Icon(Icons.my_location),
-            ),
-          ],
-        ),
       ),
     );
   }
