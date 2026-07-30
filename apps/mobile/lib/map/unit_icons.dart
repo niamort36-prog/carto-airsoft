@@ -226,16 +226,25 @@ class UnitIcons {
         SymbolFamily.point => PointType.values.map((p) => p.slug).toList(),
       };
 
-  /// Tous les identifiants du pack, à enregistrer dans le style MapLibre.
-  static List<String> get allIconIds => [
-        for (final family in SymbolFamily.values)
-          for (final slug in slugsOf(family))
-            if (family.hasAffiliation)
-              for (final a in UnitAffiliation.values)
-                if (exists(family, slug, a)) iconId(family, slug, a)
-            else
-              slug,
-      ];
+  /// Tous les identifiants du pack. Écrit en impératif à dessein : la même
+  /// liste en compréhension rattachait son `else` au mauvais `if`, si bien
+  /// que les points d'ordre — les seuls sans camp — n'y figuraient pas et
+  /// n'étaient donc jamais dessinés.
+  static List<String> get allIconIds {
+    final ids = <String>[];
+    for (final family in SymbolFamily.values) {
+      for (final slug in slugsOf(family)) {
+        if (!family.hasAffiliation) {
+          ids.add(slug);
+          continue;
+        }
+        for (final a in UnitAffiliation.values) {
+          if (exists(family, slug, a)) ids.add(iconId(family, slug, a));
+        }
+      }
+    }
+    return ids;
+  }
 
   static final Set<String> _known = allIconIds.toSet();
 
@@ -369,6 +378,14 @@ class UnitIcons {
     final frame = await codec.getNextFrame();
     final image = frame.image;
 
+    // Le pack mélange des symboles de 150 px de haut (points, structures)
+    // et de 304 px (unités). Rendus à la même échelle, les premiers sont
+    // deux fois plus petits sur la carte — au point de passer inaperçus.
+    // On les agrandit sans jamais réduire les autres.
+    final scale = math.min(2.0, math.max(1.0, 300 / image.height));
+    final symbolWidth = image.width * scale;
+    final symbolHeight = image.height * scale;
+
     final painter = TextPainter(
       textDirection: TextDirection.ltr,
       text: TextSpan(
@@ -387,21 +404,32 @@ class UnitIcons {
 
     const gap = 20.0;
     final textWidth = painter.width;
-    final width = image.width + 2 * (gap + textWidth);
+    final width = symbolWidth + 2 * (gap + textWidth);
     final height =
-        image.height > painter.height ? image.height.toDouble() : painter.height;
+        symbolHeight > painter.height ? symbolHeight : painter.height;
 
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
-    canvas.drawImage(
+    canvas.drawImageRect(
       image,
-      ui.Offset(gap + textWidth, (height - image.height) / 2),
-      ui.Paint(),
+      ui.Rect.fromLTWH(
+        0,
+        0,
+        image.width.toDouble(),
+        image.height.toDouble(),
+      ),
+      ui.Rect.fromLTWH(
+        gap + textWidth,
+        (height - symbolHeight) / 2,
+        symbolWidth,
+        symbolHeight,
+      ),
+      ui.Paint()..filterQuality = ui.FilterQuality.medium,
     );
     painter.paint(
       canvas,
       Offset(
-        gap + textWidth + image.width + gap,
+        gap + textWidth + symbolWidth + gap,
         (height - painter.height) / 2,
       ),
     );
