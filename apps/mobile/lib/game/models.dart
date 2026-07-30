@@ -230,18 +230,47 @@ class PerkView {
       );
 }
 
+/// Survol de drone visible sur la carte (§7.7). Le drone adverse est visible
+/// — on l'entend passer — mais ce qu'il a vu ne l'est jamais.
+class DroneOverflight {
+  const DroneOverflight({
+    required this.instanceId,
+    required this.lat,
+    required this.lng,
+    required this.radiusMeters,
+    required this.endsAt,
+    required this.friendly,
+  });
+
+  final String instanceId;
+  final double lat;
+  final double lng;
+  final int radiusMeters;
+  final DateTime endsAt;
+
+  /// true = c'est notre drone ; false = celui d'en face (rendu en hostile).
+  final bool friendly;
+
+  bool get expired => endsAt.isBefore(DateTime.now());
+}
+
 /// Contact hostile révélé par un drone — éphémère par construction.
 class RevealedContact {
   const RevealedContact({
     required this.membershipId,
     required this.lat,
     required this.lng,
+    required this.unitType,
     this.pseudo,
   });
 
   final String membershipId;
   final double lat;
   final double lng;
+
+  /// Insigne du contact : le drone montre le VRAI type d'unité repéré,
+  /// décliné en hostile.
+  final String unitType;
   final String? pseudo;
 
   factory RevealedContact.fromJson(Map<String, dynamic> json) =>
@@ -249,6 +278,7 @@ class RevealedContact {
         membershipId: json['membershipId'] as String,
         lat: (json['lat'] as num).toDouble(),
         lng: (json['lng'] as num).toDouble(),
+        unitType: json['unitType'] as String? ?? 'infantry',
         pseudo: json['pseudo'] as String?,
       );
 }

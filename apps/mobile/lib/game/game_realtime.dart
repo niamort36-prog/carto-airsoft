@@ -32,6 +32,9 @@ class GameRealtime {
   /// d'attente sans attendre une action du joueur (§7.6).
   void Function()? onReconnected;
 
+  /// Événement de perk : activation (avec sa zone) ou brouillage.
+  void Function(Map<String, dynamic> event)? onPerkEvent;
+
   sio.Socket? _socket;
 
   void connect() {
@@ -82,6 +85,10 @@ class GameRealtime {
         onChatMessage
             ?.call(MessageView.fromJson(data.cast<String, dynamic>()));
       }
+    });
+
+    socket.on('perk:event', (dynamic data) {
+      if (data is Map) onPerkEvent?.call(data.cast<String, dynamic>());
     });
 
     socket.onDisconnect((_) => onConnectionChanged(false));

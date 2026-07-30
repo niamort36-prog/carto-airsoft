@@ -28,6 +28,8 @@ export interface RevealedContact {
   teamId: string | null;
   lat: number;
   lng: number;
+  /** Insigne du contact : le drone montre le vrai type d'unité repéré. */
+  unitType: string;
   lifeStatus: string;
 }
 
@@ -287,15 +289,20 @@ export class PerksService {
       );
     }
 
-    // L'activation elle-même est annoncée à toute la partie (on entend le
-    // drone) — sans révéler ce qu'il a vu.
+    // L'activation est annoncée à TOUTE la partie, avec sa zone : on voit
+    // et on entend passer le drone adverse. Ce qu'il a vu, en revanche, ne
+    // sort jamais de l'équipe qui l'a lancé.
     this.events.emit(PERK_EVENT, {
       gameId,
       teamId: null,
       event: {
         kind: 'perk:activated',
         type: def.type,
+        instanceId: instance.id,
         teamId: membership.teamId,
+        lat: dto.lat,
+        lng: dto.lng,
+        radiusMeters: def.radiusMeters,
         endsAt,
         jammed,
       },
@@ -326,6 +333,7 @@ export class PerksService {
         membershipId: memberships.id,
         pseudo: users.pseudo,
         teamId: memberships.teamId,
+        unitType: memberships.unitType,
         lifeStatus: memberships.lifeStatus,
         position: memberships.lastPosition,
       })
@@ -352,6 +360,7 @@ export class PerksService {
       membershipId: r.membershipId,
       pseudo: r.pseudo,
       teamId: r.teamId,
+      unitType: r.unitType,
       lat: r.position!.y,
       lng: r.position!.x,
       lifeStatus: r.lifeStatus,

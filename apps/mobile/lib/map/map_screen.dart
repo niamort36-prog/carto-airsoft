@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:math' show Point;
 
 import 'package:flutter/material.dart';
@@ -42,7 +43,7 @@ class _MapScreenState extends State<MapScreen> {
   static const _drawingsSource = 'drawings';
   static const _draftSource = 'draft';
   static const _objectivesSource = 'objectives';
-  static const _contactsSource = 'contacts';
+  static const _dronesSource = 'drones';
 
   /// Tailles d'icônes interpolées sur le zoom : toujours visibles de loin,
   /// confortables de près.
@@ -85,6 +86,17 @@ class _MapScreenState extends State<MapScreen> {
   /// ils n'ont aucune persistance, c'est le principe même du perk.
   List<RevealedContact> _contacts = const [];
   Timer? _contactsExpiry;
+
+  /// Heure du survol qui a révélé les contacts en cours.
+  DateTime _contactsAt = DateTime.now();
+
+  /// Drones en vol, le sien comme celui d'en face. On voit passer le drone
+  /// adverse (et sa zone), mais jamais ce qu'il a vu.
+  final List<DroneOverflight> _drones = [];
+
+  /// Anime la rotation du drone autour de sa zone.
+  Timer? _droneTicker;
+  double _droneAngle = 0;
   final Map<String, MemberView> _members = {};
   final Map<String, MapObjectView> _objects = {};
   String? _myMembershipId;
@@ -97,6 +109,49 @@ class _MapScreenState extends State<MapScreen> {
   /// Mode dessin (§ Phase 2) : chaque tap ajoute un sommet.
   bool _drawing = false;
   final List<LatLng> _draftPoints = [];
+
+  /// Motif habillant le prochain tracé (id d'icône de la famille « Dessin »),
+  /// ou null pour un trait uni.
+  String? _drawPattern;
+
+  /// Images « symbole + heure » déjà enregistrées dans le style.
+  final Set<String> _stampedIcons = {};
+
+  /// Icônes du pack déjà enregistrées dans le style (variantes comprises).
+  final Set<String> _registeredIcons = {};
+
+  /// Icône d'amorçage des sources de symboles (voir [_seeded]).
+  static const _seedIcon = 'infantry_hostile';
+
+  /// MapLibre Native n'affiche jamais les symboles d'une source GeoJSON
+  /// créée vide : la couche est bien là, mais elle reste muette. On amorce
+  /// donc chaque source de symboles avec un point invisible (opacité nulle,
+  /// au large du golfe de Guinée), remplacé dès la première vraie donnée.
+  static Map<String, dynamic> _seeded(Map<String, dynamic> collection) {
+    if ((collection['features'] as List).isNotEmpty) return collection;
+    return {
+      'type': 'FeatureCollection',
+      'features': [
+        {
+          'type': 'Feature',
+          'geometry': {
+            'type': 'Point',
+            'coordinates': [0.0, 0.0],
+          },
+          'properties': {
+            'icon': _seedIcon,
+            'opacity': 0.0,
+            'bearing': 0.0,
+            'label': '',
+            'color': '#000000',
+          },
+        },
+      ],
+    };
+  }
+
+  /// Marqueur en cours de repositionnement : le prochain tap le déplace.
+  MapObjectView? _moving;
 
   bool get _inGame => widget.gameId != null;
 
@@ -123,7 +178,9 @@ class _MapScreenState extends State<MapScreen> {
           // Retour du réseau → vidage de la file + delta (§7.6).
           if (connected) _kickSync();
         },
-      )..connect();
+      )
+        ..onPerkEvent = _onPerkEvent
+        ..connect();
       _loadObjects();
       _loadPermissions();
     }
@@ -198,6 +255,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _heartbeat?.cancel();
     _contactsExpiry?.cancel();
+    _droneTicker?.cancel();
     _positionSub?.cancel();
     _realtime?.dispose();
     super.dispose();
@@ -233,6 +291,8 @@ class _MapScreenState extends State<MapScreen> {
   /// que le drone a vu ne subsiste sur le téléphone.
   void _showContacts(List<RevealedContact> contacts, DateTime endsAt) {
     _contactsExpiry?.cancel();
+    // Heure du survol, figée : c'est l'instant de la détection qui compte.
+    _contactsAt = DateTime.now();
     setState(() => _contacts = contacts);
     _refreshObjectives();
     final remaining = endsAt.difference(DateTime.now());
@@ -244,6 +304,49 @@ class _MapScreenState extends State<MapScreen> {
         _refreshObjectives();
       },
     );
+  }
+
+  /// Un drone décolle — le nôtre ou celui d'en face. On affiche sa zone et
+  /// l'appareil qui la survole ; ce qu'il observe reste à son camp.
+  void _onPerkEvent(Map<String, dynamic> event) {
+    if (event['kind'] != 'perk:activated' || event['type'] != 'drone') return;
+    final endsAt = DateTime.tryParse(event['endsAt'] as String? ?? '');
+    final lat = (event['lat'] as num?)?.toDouble();
+    final lng = (event['lng'] as num?)?.toDouble();
+    if (endsAt == null || lat == null || lng == null) return;
+
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final drone = DroneOverflight(
+      instanceId: event['instanceId'] as String? ?? '$lat/$lng',
+      lat: lat,
+      lng: lng,
+      radiusMeters: (event['radiusMeters'] as num?)?.toInt() ?? 300,
+      endsAt: endsAt,
+      friendly: me?.teamId != null && event['teamId'] == me!.teamId,
+    );
+    setState(() {
+      _drones
+        ..removeWhere((d) => d.instanceId == drone.instanceId || d.expired)
+        ..add(drone);
+    });
+    _startDroneTicker();
+    if (!drone.friendly) {
+      _showSnack('Drone ennemi en approche !');
+    }
+  }
+
+  /// Fait tourner l'appareil autour de sa zone tant qu'un drone est en vol.
+  void _startDroneTicker() {
+    _droneTicker ??= Timer.periodic(const Duration(milliseconds: 250), (_) {
+      if (!mounted) return;
+      _drones.removeWhere((d) => d.expired);
+      _droneAngle = (_droneAngle + 9) % 360;
+      _refreshDrones();
+      if (_drones.isEmpty) {
+        _droneTicker?.cancel();
+        _droneTicker = null;
+      }
+    });
   }
 
   /// Les alliés, hors soi-même, en ordre hiérarchique descendant (§5) :
@@ -637,7 +740,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  /// Grille des 13 insignes alliés.
+  /// Grille des insignes alliés, pour attribuer celui d'un joueur.
   Future<UnitType?> _pickUnitType() {
     return showDialog<UnitType>(
       context: context,
@@ -664,7 +767,11 @@ class _MapScreenState extends State<MapScreen> {
                     Expanded(
                       child: Image.asset(
                         UnitIcons.assetKey(
-                          UnitIcons.iconId(type, UnitAffiliation.allied),
+                          UnitIcons.iconId(
+                            SymbolFamily.unit,
+                            type.slug,
+                            UnitAffiliation.allied,
+                          ),
                         ),
                         fit: BoxFit.contain,
                       ),
@@ -695,26 +802,16 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _onStyleLoaded() async {
     final controller = _controller;
     if (controller == null) return;
+    // Changer de fond vide le style : les images sont à réenregistrer.
+    _stampedIcons.clear();
+    _registeredIcons.clear();
     try {
-      // Pack d'icônes d'unités : enregistré dans le style (assets embarqués,
-      // donc disponible hors ligne, aucune police requise). Les insignes
-      // alliés reçoivent en plus deux variantes à contour blanc : `_outline`
-      // (lisibilité sur fond forêt) et `_self` (contour épais = moi).
-      for (final iconId in UnitIcons.allIconIds) {
-        final bytes = await rootBundle.load(UnitIcons.assetKey(iconId));
-        final png = bytes.buffer.asUint8List();
-        await controller.addImage(iconId, png);
-        if (iconId.endsWith('_allied')) {
-          await controller.addImage(
-            '${iconId}_outline',
-            await UnitIcons.outlinedPng(iconId, png, border: 8),
-          );
-          await controller.addImage(
-            '${iconId}_self',
-            await UnitIcons.outlinedPng(iconId, png, border: 22),
-          );
-        }
-      }
+      // Seuls les motifs sont enregistrés d'emblée : les couches à
+      // `line-pattern` les réclament dès leur création. Tout le reste est
+      // enregistré à la demande (`_ensureIcons`) — inscrire le pack entier
+      // gonflait l'atlas de sprites au point que certaines icônes ne se
+      // dessinaient plus, et retardait l'affichage de plusieurs secondes.
+      await _ensureIcons([...UnitIcons.patternIconIds, _seedIcon]);
       // Zones (remplissage translucide) et lignes — sous les marqueurs.
       await controller.addGeoJsonSource(_drawingsSource, _drawingsGeoJson());
       await controller.addFillLayer(
@@ -734,9 +831,28 @@ class _MapScreenState extends State<MapScreen> {
           lineOpacity: ['get', 'opacity'],
         ),
       );
-      await controller.addGeoJsonSource(_markersSource, _markersGeoJson());
-      // Icône du marqueur + heure de pose en petit dessous (le style déclare
-      // un endpoint `glyphs` pour le texte ; mis en cache comme les tuiles).
+      // Tracés à motif (barbelés, fortifié) : `line-pattern` n'accepte pas
+      // d'expression sur toutes les plateformes, on déclare donc une couche
+      // par motif, filtrée sur la propriété `pattern`.
+      for (final id in UnitIcons.patternIconIds) {
+        await controller.addLineLayer(
+          _drawingsSource,
+          'drawings-pattern-$id',
+          LineLayerProperties(
+            linePattern: id,
+            lineWidth: 16.0,
+            lineOpacity: const ['get', 'patternOpacity'],
+          ),
+          filter: ['==', ['get', 'pattern'], id],
+        );
+      }
+      await controller.addGeoJsonSource(
+        _markersSource,
+        _seeded(_markersGeoJson()),
+      );
+      // Symbole + heure de pose : l'heure fait partie de l'image (voir
+      // `_ensureMarkerImages`), pas d'une couche de texte — aucun serveur de
+      // polices n'est donc nécessaire, et le libellé survit au hors-ligne.
       await controller.addSymbolLayer(
         _markersSource,
         _markersLayer,
@@ -745,21 +861,13 @@ class _MapScreenState extends State<MapScreen> {
           iconSize: _markerIconSize,
           iconAllowOverlap: true,
           iconOpacity: ['get', 'opacity'],
-          textField: ['get', 'time'],
-          textFont: ['Open Sans Semibold'],
-          textSize: 11,
-          textAnchor: 'top',
-          textOffset: [0, 1.9],
-          textColor: '#ffffff',
-          textHaloColor: '#000000',
-          textHaloWidth: 1.2,
-          textAllowOverlap: true,
-          textOptional: true,
-          textOpacity: ['get', 'opacity'],
         ),
       );
       // Alliés : insigne d'unité à contour blanc (statut → panneau Alliés).
-      await controller.addGeoJsonSource(_alliesSource, _alliesGeoJson());
+      await controller.addGeoJsonSource(
+        _alliesSource,
+        _seeded(_alliesGeoJson()),
+      );
       await controller.addSymbolLayer(
         _alliesSource,
         'allies-icons',
@@ -772,7 +880,7 @@ class _MapScreenState extends State<MapScreen> {
       );
       // Moi : mon insigne (au choix), contour blanc épais — remplace le
       // point bleu en partie.
-      await controller.addGeoJsonSource(_selfSource, _selfGeoJson());
+      await controller.addGeoJsonSource(_selfSource, _seeded(_selfGeoJson()));
       await controller.addSymbolLayer(
         _selfSource,
         'self-icon',
@@ -785,7 +893,7 @@ class _MapScreenState extends State<MapScreen> {
       // Drapeaux (§7.8) : couleur du camp détenteur, gris si neutre.
       await controller.addGeoJsonSource(
         _objectivesSource,
-        _objectivesGeoJson(),
+        _seeded(_objectivesGeoJson()),
       );
       await controller.addCircleLayer(
         _objectivesSource,
@@ -813,17 +921,23 @@ class _MapScreenState extends State<MapScreen> {
           textOptional: true,
         ),
       );
-      // Contacts révélés par un drone : rouge vif, éphémères.
-      await controller.addGeoJsonSource(_contactsSource, _contactsGeoJson());
-      await controller.addCircleLayer(
-        _contactsSource,
-        'contacts-circles',
-        const CircleLayerProperties(
-          circleRadius: 9,
-          circleColor: '#F44336',
-          circleOpacity: 0.85,
-          circleStrokeWidth: 2,
-          circleStrokeColor: '#ffffff',
+      // Zone survolée par un drone : cercle du rayon, couleur du camp.
+      await controller.addGeoJsonSource(_dronesSource, _dronesGeoJson());
+      await controller.addFillLayer(
+        _dronesSource,
+        'drones-zone',
+        const FillLayerProperties(
+          fillColor: ['get', 'color'],
+          fillOpacity: 0.10,
+        ),
+      );
+      await controller.addLineLayer(
+        _dronesSource,
+        'drones-ring',
+        const LineLayerProperties(
+          lineColor: ['get', 'color'],
+          lineWidth: 2,
+          lineDasharray: [3, 2],
         ),
       );
       // Brouillon de dessin (pointillés blancs + sommets).
@@ -851,6 +965,7 @@ class _MapScreenState extends State<MapScreen> {
       _refreshAllies();
       _refreshMarkers();
       _refreshObjectives();
+      _refreshDrones();
     } catch (e) {
       debugPrint('couches carte indisponibles: $e');
     }
@@ -862,10 +977,30 @@ class _MapScreenState extends State<MapScreen> {
         '${local.minute.toString().padLeft(2, '0')}';
   }
 
+  /// Image d'un marqueur : le symbole ET l'heure de pose, dans la couleur du
+  /// camp (rouge hostile, bleu allié, vert neutre, jaune inconnu).
+  String _markerImageId(MapObjectView o) => UnitIcons.stampId(
+        o.icon ?? 'infantry_unknown',
+        _timeLabel(o.createdAt),
+      );
+
+  /// Icône d'un contact révélé : son VRAI insigne, en rouge hostile.
+  String _contactIcon(RevealedContact c) =>
+      UnitIcons.isKnown('${c.unitType}_hostile')
+          ? '${c.unitType}_hostile'
+          : 'infantry_hostile';
+
+  String _contactImageId(RevealedContact c) =>
+      UnitIcons.stampId(_contactIcon(c), _timeLabel(_contactsAt));
+
+  /// Tous les symboles ponctuels de la carte partagent cette couche :
+  /// marqueurs posés, contacts révélés par un drone et l'appareil lui-même.
+  /// Les regrouper évite les couches `symbol` alimentées par une source
+  /// créée vide, que le rendu natif laisse muettes.
   Map<String, dynamic> _markersGeoJson() => {
         'type': 'FeatureCollection',
         'features': [
-          // Uniquement les marqueurs ponctuels — lignes/zones ont leur couche.
+          // Marqueurs ponctuels — lignes/zones ont leur couche.
           for (final o in _objects.values.where((o) => o.kind == 'marker'))
             {
               'type': 'Feature',
@@ -875,19 +1010,140 @@ class _MapScreenState extends State<MapScreen> {
                 'coordinates': [o.lng, o.lat],
               },
               'properties': {
-                'icon': o.icon ?? 'infantry_unknown',
-                // Heure de POSE (horloge de l'auteur, §7.6) — pas de réception.
-                'time': _timeLabel(o.createdAt),
+                // Heure de POSE (horloge de l'auteur, §7.6) incluse dans
+                // l'image — pas de réception.
+                'icon': _markerImageId(o),
                 // Translucide tant que le serveur n'a pas accepté l'objet.
                 'opacity': o.pending ? 0.55 : 1.0,
               },
             },
+          // Contacts révélés — éphémères, effacés à la fin du survol.
+          for (final c in _contacts)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [c.lng, c.lat],
+              },
+              'properties': {
+                'icon': _contactImageId(c),
+                'opacity': 1.0,
+              },
+            },
+          // L'appareil en orbite sur le bord de sa zone.
+          for (final d in _drones)
+            () {
+              final pos = _offset(d.lat, d.lng, d.radiusMeters * 0.75,
+                  _droneAngle);
+              return {
+                'type': 'Feature',
+                'geometry': {
+                  'type': 'Point',
+                  'coordinates': [pos.$2, pos.$1],
+                },
+                'properties': {
+                  'icon': UnitIcons.rotatedId(
+                    d.friendly ? UnitIcons.droneAllied : UnitIcons.droneHostile,
+                    _droneAngle + 90,
+                  ),
+                  'opacity': 1.0,
+                },
+              };
+            }(),
         ],
       };
 
-  void _refreshMarkers() {
+  /// Enregistre à la demande les icônes du pack utilisées par une couche.
+  /// Les suffixes `_outline` (contour blanc) et `_self` (contour épais) sont
+  /// fabriqués à la volée à partir de l'icône de base.
+  Future<void> _ensureIcons(Iterable<String> ids) async {
+    final controller = _controller;
+    if (controller == null) return;
+    for (final id in ids) {
+      if (id.isEmpty || !_registeredIcons.add(id)) continue;
+      try {
+        const outlineSuffix = '_outline';
+        const selfSuffix = '_self';
+        if (id.endsWith(outlineSuffix) || id.endsWith(selfSuffix)) {
+          final outline = id.endsWith(outlineSuffix);
+          final base = id.substring(
+            0,
+            id.length - (outline ? outlineSuffix.length : selfSuffix.length),
+          );
+          final png = (await rootBundle.load(UnitIcons.assetKey(base)))
+              .buffer
+              .asUint8List();
+          await controller.addImage(
+            id,
+            await UnitIcons.outlinedPng(base, png, border: outline ? 8 : 22),
+          );
+        } else {
+          final key = UnitIcons.perkIconIds.contains(id)
+              ? UnitIcons.perkAssetKey(id)
+              : UnitIcons.assetKey(id);
+          final png = (await rootBundle.load(key)).buffer.asUint8List();
+          await controller.addImage(id, await UnitIcons.normalizedPng(png));
+        }
+      } catch (e) {
+        _registeredIcons.remove(id);
+        debugPrint('icône indisponible : $id ($e)');
+      }
+    }
+  }
+
+  /// Fabrique et enregistre les images composées manquantes : « symbole +
+  /// heure » pour les marqueurs et les contacts, symbole pivoté pour le
+  /// drone. Une image par combinaison, gardée en cache pour la session.
+  Future<void> _ensureMarkerImages() async {
+    final controller = _controller;
+    if (controller == null) return;
+    // Instantané : les listes peuvent changer pendant les `await` ci-dessous.
+    final stamps = <(String id, String icon, String time)>[
+      for (final o in _objects.values)
+        if (o.kind == 'marker')
+          (_markerImageId(o), o.icon ?? 'infantry_unknown',
+              _timeLabel(o.createdAt)),
+      for (final c in _contacts)
+        (_contactImageId(c), _contactIcon(c), _timeLabel(_contactsAt)),
+    ];
+    for (final (id, icon, time) in stamps) {
+      if (!_stampedIcons.add(id)) continue;
+      if (!UnitIcons.isKnown(icon)) {
+        _stampedIcons.remove(id);
+        continue;
+      }
+      final base = await rootBundle.load(UnitIcons.assetKey(icon));
+      await controller.addImage(
+        id,
+        await UnitIcons.stampedPng(
+          base.buffer.asUint8List(),
+          time,
+          UnitIcons.affiliationOf(icon)?.color ?? Colors.white,
+        ),
+      );
+    }
+    // Le drone : une image par pas de cap, fabriquée une seule fois.
+    for (final d in [..._drones]) {
+      final icon =
+          d.friendly ? UnitIcons.droneAllied : UnitIcons.droneHostile;
+      final id = UnitIcons.rotatedId(icon, _droneAngle + 90);
+      if (!_stampedIcons.add(id)) continue;
+      final base = await rootBundle.load(UnitIcons.perkAssetKey(icon));
+      await controller.addImage(
+        id,
+        await UnitIcons.rotatedPng(
+          base.buffer.asUint8List(),
+          UnitIcons.quantizeBearing(_droneAngle + 90).toDouble(),
+        ),
+      );
+    }
+  }
+
+  Future<void> _refreshMarkers() async {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
+    await _ensureMarkerImages();
+    if (!mounted) return;
     controller.setGeoJsonSource(_markersSource, _markersGeoJson());
     controller.setGeoJsonSource(_drawingsSource, _drawingsGeoJson());
   }
@@ -920,26 +1176,68 @@ class _MapScreenState extends State<MapScreen> {
         ],
       };
 
-  Map<String, dynamic> _contactsGeoJson() => {
+  /// Zones survolées. Le cercle est approché par un polygone : MapLibre ne
+  /// sait pas dessiner un disque en mètres réels sans calcul préalable.
+  Map<String, dynamic> _dronesGeoJson() => {
         'type': 'FeatureCollection',
         'features': [
-          for (final c in _contacts)
+          for (final d in _drones)
             {
               'type': 'Feature',
               'geometry': {
-                'type': 'Point',
-                'coordinates': [c.lng, c.lat],
+                'type': 'Polygon',
+                'coordinates': [_circle(d.lat, d.lng, d.radiusMeters)],
               },
-              'properties': const <String, dynamic>{},
+              'properties': {
+                'color': d.friendly
+                    ? UnitAffiliation.allied.hex
+                    : UnitAffiliation.hostile.hex,
+              },
             },
         ],
       };
 
-  void _refreshObjectives() {
+  Future<void> _refreshDrones() async {
+    final controller = _controller;
+    if (controller == null || !_styleReady) return;
+    controller.setGeoJsonSource(_dronesSource, _dronesGeoJson());
+    // L'appareil lui-même vit dans la couche des marqueurs.
+    await _refreshMarkers();
+  }
+
+  /// Point à `meters` du centre, dans la direction `bearingDeg`.
+  static (double, double) _offset(
+    double lat,
+    double lng,
+    num meters,
+    double bearingDeg,
+  ) {
+    const earth = 6378137.0;
+    final rad = bearingDeg * math.pi / 180;
+    final dLat = (meters * math.cos(rad)) / earth * 180 / math.pi;
+    final dLng = (meters * math.sin(rad)) /
+        (earth * math.cos(lat * math.pi / 180)) *
+        180 /
+        math.pi;
+    return (lat + dLat, lng + dLng);
+  }
+
+  static List<List<double>> _circle(double lat, double lng, num radiusMeters) {
+    return [
+      for (var i = 0; i <= 48; i++)
+        () {
+          final p = _offset(lat, lng, radiusMeters, i * 360 / 48);
+          return [p.$2, p.$1];
+        }(),
+    ];
+  }
+
+  Future<void> _refreshObjectives() async {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
     controller.setGeoJsonSource(_objectivesSource, _objectivesGeoJson());
-    controller.setGeoJsonSource(_contactsSource, _contactsGeoJson());
+    // Les contacts vivent dans la couche des marqueurs.
+    await _refreshMarkers();
   }
 
   Map<String, dynamic> _drawingsGeoJson() => {
@@ -947,18 +1245,25 @@ class _MapScreenState extends State<MapScreen> {
         'features': [
           for (final o in _objects.values)
             if (o.kind != 'marker' && o.geometry != null)
-              {
-                'type': 'Feature',
-                'id': o.id,
-                'geometry': o.geometry,
-                'properties': {
-                  'color': (o.properties['color'] as String?) ?? '#FF9800',
-                  // Translucide tant que le serveur n'a pas accepté (§7.6).
-                  'opacity': o.pending ? 0.45 : 0.9,
-                  'fillOpacity':
-                      o.kind == 'zone' ? (o.pending ? 0.10 : 0.22) : 0.0,
-                },
-              },
+              () {
+                final pattern = o.properties['pattern'] as String?;
+                return {
+                  'type': 'Feature',
+                  'id': o.id,
+                  'geometry': o.geometry,
+                  'properties': {
+                    'color': (o.properties['color'] as String?) ?? '#FF9800',
+                    'pattern': pattern ?? '',
+                    // Translucide tant que le serveur n'a pas accepté (§7.6).
+                    // Le trait uni s'efface derrière le motif quand il y en a
+                    // un, pour ne pas doubler le tracé.
+                    'opacity': pattern != null ? 0.0 : (o.pending ? 0.45 : 0.9),
+                    'patternOpacity': o.pending ? 0.5 : 1.0,
+                    'fillOpacity':
+                        o.kind == 'zone' ? (o.pending ? 0.10 : 0.22) : 0.0,
+                  },
+                };
+              }(),
         ],
       };
 
@@ -995,9 +1300,61 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _onMapClick(Point<double> point, LatLng latLng) {
+    // Repositionnement en cours : ce tap désigne la nouvelle position.
+    final moving = _moving;
+    if (moving != null) {
+      setState(() => _moving = null);
+      _saveObject(
+        _copyObject(moving, lat: latLng.latitude, lng: latLng.longitude),
+      );
+      _showSnack('Marqueur déplacé');
+      return;
+    }
     if (!_drawing) return;
     setState(() => _draftPoints.add(latLng));
     _refreshDraft();
+  }
+
+  /// Duplique un objet en changeant ce qui est demandé. L'id client est
+  /// conservé : le serveur reconnaît une MODIFICATION, pas une création.
+  MapObjectView _copyObject(
+    MapObjectView o, {
+    double? lat,
+    double? lng,
+    Map<String, dynamic>? properties,
+    DateTime? deletedAt,
+  }) =>
+      MapObjectView(
+        id: o.id,
+        kind: o.kind,
+        markerType: o.markerType,
+        lat: lat ?? o.lat,
+        lng: lng ?? o.lng,
+        properties: properties ?? o.properties,
+        geometry: o.geometry,
+        authorMembershipId: o.authorMembershipId,
+        createdAt: o.createdAt,
+        deletedAt: deletedAt,
+        pending: true,
+      );
+
+  /// Enregistre localement puis pousse : même chemin offline que la pose.
+  Future<void> _saveObject(MapObjectView object) async {
+    await _syncService!.saveLocal(object, pending: true);
+    _applyObject(object);
+    _kickSync();
+  }
+
+  /// Choix du motif de tracé, dans le même sélecteur que les symboles mais
+  /// restreint à la famille « Dessin ».
+  Future<void> _pickPattern() async {
+    final choice = await showModalBottomSheet<SymbolChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const UnitPickerSheet(families: [SymbolFamily.pattern]),
+    );
+    if (choice == null) return;
+    setState(() => _drawPattern = choice.iconId);
   }
 
   void _cancelDrawing() {
@@ -1008,12 +1365,40 @@ class _MapScreenState extends State<MapScreen> {
     _refreshDraft();
   }
 
-  /// Termine le dessin en ligne ou en zone — même chemin offline-first que
-  /// les marqueurs : base locale, affichage immédiat, file d'attente (§7.6).
-  Future<void> _finishDrawing(String kind) async {
-    final coords = [
-      for (final p in _draftPoints) [p.longitude, p.latitude],
+  /// Huit sommets réguliers autour d'un centre, rayon = distance au second
+  /// point pointé. Sert à tracer un octogone d'un simple geste à deux taps.
+  List<LatLng> _octagon(LatLng center, LatLng edge) {
+    final radius = _distanceMeters(center, edge);
+    return [
+      for (var i = 0; i < 8; i++)
+        () {
+          final p =
+              _offset(center.latitude, center.longitude, radius, i * 45.0);
+          return LatLng(p.$1, p.$2);
+        }(),
     ];
+  }
+
+  static double _distanceMeters(LatLng a, LatLng b) {
+    const earth = 6378137.0;
+    final dLat = (b.latitude - a.latitude) * math.pi / 180;
+    final dLng = (b.longitude - a.longitude) * math.pi / 180;
+    final meanLat = (a.latitude + b.latitude) / 2 * math.pi / 180;
+    final x = dLng * math.cos(meanLat);
+    return earth * math.sqrt(x * x + dLat * dLat);
+  }
+
+  /// Termine le dessin en ligne, en zone ou en octogone — même chemin
+  /// offline-first que les marqueurs : base locale, affichage immédiat,
+  /// file d'attente (§7.6).
+  Future<void> _finishDrawing(String shape) async {
+    final points = shape == 'octagon'
+        ? _octagon(_draftPoints[0], _draftPoints[1])
+        : _draftPoints;
+    final coords = [
+      for (final p in points) [p.longitude, p.latitude],
+    ];
+    final kind = shape == 'line' ? 'line' : 'zone';
     final geometry = kind == 'line'
         ? {'type': 'LineString', 'coordinates': coords}
         : {
@@ -1022,15 +1407,29 @@ class _MapScreenState extends State<MapScreen> {
               [...coords, coords.first], // anneau fermé
             ],
           };
+    // Un tracé à motif prend la couleur de son camp ; sinon, les couleurs
+    // historiques (zone rouge, ligne bleue).
+    final pattern = _drawPattern;
+    final affiliation =
+        pattern != null ? UnitIcons.affiliationOf(pattern) : null;
+    final label = switch (shape) {
+      'line' => 'Ligne',
+      'octagon' => 'Octogone',
+      _ => 'Zone',
+    };
     final object = MapObjectView(
       id: const Uuid().v7(),
       kind: kind,
       markerType: 'poi',
-      lat: _draftPoints.first.latitude,
-      lng: _draftPoints.first.longitude,
+      lat: points.first.latitude,
+      lng: points.first.longitude,
       properties: {
-        'color': kind == 'zone' ? '#F44336' : '#2196F3',
-        'unitLabel': kind == 'zone' ? 'Zone' : 'Ligne',
+        'color': affiliation?.hex ??
+            (kind == 'zone' ? '#F44336' : '#2196F3'),
+        'unitLabel': pattern == null
+            ? label
+            : '$label ${UnitIcons.labelOf(pattern).toLowerCase()}',
+        'pattern': ?pattern,
       },
       geometry: geometry,
       authorMembershipId: _myMembershipId ?? '',
@@ -1070,9 +1469,16 @@ class _MapScreenState extends State<MapScreen> {
     return {'type': 'FeatureCollection', 'features': features};
   }
 
-  void _refreshAllies() {
+  Future<void> _refreshAllies() async {
     final controller = _controller;
     if (controller == null || !_styleReady) return;
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    await _ensureIcons([
+      for (final m in _members.values)
+        if (m.membershipId != _myMembershipId) '${m.unitType}_allied_outline',
+      if (me != null) '${me.unitType}_allied_self',
+    ]);
+    if (!mounted) return;
     controller.setGeoJsonSource(_alliesSource, _alliesGeoJson());
     controller.setGeoJsonSource(_selfSource, _selfGeoJson());
   }
@@ -1101,24 +1507,37 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Appui long : pose d'un marqueur d'unité à l'endroit visé (§ Phase 2).
   Future<void> _onMapLongClick(Point<double> point, LatLng latLng) async {
-    if (!_inGame || _drawing) return;
-    final choice = await showModalBottomSheet<UnitChoice>(
+    if (!_inGame || _drawing || _moving != null) return;
+    final choice = await showModalBottomSheet<SymbolChoice>(
       context: context,
       showDragHandle: true,
-      builder: (_) => const UnitPickerSheet(),
+      // Les motifs servent aux tracés, pas aux marqueurs ponctuels.
+      builder: (_) => const UnitPickerSheet(
+        families: [
+          SymbolFamily.unit,
+          SymbolFamily.structure,
+          SymbolFamily.point,
+        ],
+      ),
     );
     if (choice == null || !mounted) return;
 
+    final affiliation = UnitIcons.affiliationOf(choice.iconId);
     final object = MapObjectView(
       // UUID v7 côté client (§7.6) : idempotent à la resynchronisation.
       id: const Uuid().v7(),
       kind: 'marker',
-      markerType: 'unit',
+      markerType: switch (choice.family) {
+        SymbolFamily.point => 'waypoint',
+        _ => 'unit',
+      },
       lat: latLng.latitude,
       lng: latLng.longitude,
       properties: {
-        'icon': UnitIcons.iconId(choice.type, choice.affiliation),
-        'unitLabel': '${choice.type.label} — ${choice.affiliation.label}',
+        'icon': choice.iconId,
+        'unitLabel': affiliation == null
+            ? UnitIcons.labelOf(choice.iconId)
+            : '${UnitIcons.labelOf(choice.iconId)} — ${affiliation.label}',
       },
       authorMembershipId: _myMembershipId ?? '',
       createdAt: DateTime.now(),
@@ -1141,63 +1560,173 @@ class _MapScreenState extends State<MapScreen> {
     String layerId,
     Annotation? annotation,
   ) {
-    const tappable = {_markersLayer, 'drawings-fill', 'drawings-line'};
-    if (!tappable.contains(layerId)) return;
+    // Un déplacement en cours : le tap sert à reposer, pas à ouvrir la fiche.
+    if (_moving != null) return;
+    if (layerId != _markersLayer && !layerId.startsWith('drawings-')) return;
     final object = _objects[id];
     if (object == null) return;
-    final canDelete = object.authorMembershipId == _myMembershipId ||
+    _showObjectSheet(object);
+  }
+
+  /// Fiche d'un objet posé : consulter, changer de camp, changer de type,
+  /// déplacer, supprimer. Toutes les modifications gardent l'id client et
+  /// passent par la file offline — elles marchent donc sans réseau.
+  void _showObjectSheet(MapObjectView object) {
+    final canEdit = object.authorMembershipId == _myMembershipId ||
         _can(Perm.markersDeleteAny);
     final author = _members[object.authorMembershipId];
+    final icon = object.icon;
+    final affiliation = icon != null ? UnitIcons.affiliationOf(icon) : null;
+
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
-        child: ListTile(
-          leading: switch (object.kind) {
-            'zone' => const Icon(Icons.pentagon_outlined, size: 32),
-            'line' => const Icon(Icons.timeline, size: 32),
-            _ => object.icon != null
-                ? Image.asset(
-                    UnitIcons.assetKey(object.icon!),
-                    width: 40,
-                    height: 40,
-                    fit: BoxFit.contain,
-                  )
-                : const Icon(Icons.place),
-          },
-          title: Text(
-            (object.properties['unitLabel'] as String?) ?? 'Marqueur',
-          ),
-          subtitle: Text(
-            'posé par ${author?.displayName ?? 'un allié'}',
-          ),
-          trailing: canDelete
-              ? IconButton(
-                  tooltip: 'Supprimer',
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: switch (object.kind) {
+                  'zone' => const Icon(Icons.pentagon_outlined, size: 32),
+                  'line' => const Icon(Icons.timeline, size: 32),
+                  _ => icon != null
+                      ? Image.asset(
+                          UnitIcons.assetKey(icon),
+                          width: 40,
+                          height: 40,
+                          fit: BoxFit.contain,
+                        )
+                      : const Icon(Icons.place),
+                },
+                title: Text(
+                  icon != null
+                      ? UnitIcons.labelOf(icon)
+                      : (object.properties['unitLabel'] as String?) ??
+                          'Marqueur',
+                ),
+                subtitle: Text(
+                  'posé par ${author?.displayName ?? 'un allié'} '
+                  'à ${_timeLabel(object.createdAt)}',
+                ),
+              ),
+
+              if (canEdit) ...[
+                // Changer de camp : le symbole bascule dans l'autre couleur.
+                if (affiliation != null) ...[
+                  const Divider(),
+                  Text(
+                    'Camp',
+                    style: Theme.of(context).textTheme.labelMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SegmentedButton<UnitAffiliation>(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      segments: [
+                        for (final a in UnitAffiliation.values)
+                          ButtonSegment(
+                            value: a,
+                            label: Text(a.label),
+                            icon: Icon(Icons.circle, size: 12, color: a.color),
+                          ),
+                      ],
+                      selected: {affiliation},
+                      onSelectionChanged: (s) {
+                        Navigator.pop(sheetContext);
+                        _changeAffiliation(object, s.first);
+                      },
+                    ),
+                  ),
+                ],
+                const Divider(),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.open_with),
+                        label: const Text('Déplacer'),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          setState(() => _moving = object);
+                          _showSnack(
+                            'Touchez la carte pour reposer le marqueur',
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    if (object.kind == 'marker')
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.category_outlined),
+                          label: const Text('Type'),
+                          onPressed: () {
+                            Navigator.pop(sheetContext);
+                            _changeSymbol(object);
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
                   icon: const Icon(Icons.delete_outline),
-                  onPressed: () async {
+                  label: const Text('Supprimer'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  onPressed: () {
                     Navigator.pop(sheetContext);
-                    // Tombstone local en attente : part à la reconnexion.
-                    final deleted = MapObjectView(
-                      id: object.id,
-                      kind: object.kind,
-                      markerType: object.markerType,
-                      lat: object.lat,
-                      lng: object.lng,
-                      properties: object.properties,
-                      authorMembershipId: object.authorMembershipId,
-                      createdAt: object.createdAt,
-                      deletedAt: DateTime.now(),
-                      pending: true,
+                    _saveObject(
+                      _copyObject(object, deletedAt: DateTime.now()),
                     );
-                    await _syncService!.saveLocal(deleted, pending: true);
-                    _applyObject(deleted);
-                    _kickSync();
                   },
-                )
-              : null,
+                ),
+              ],
+            ],
+          ),
         ),
       ),
+    );
+  }
+
+  /// Bascule un symbole dans un autre camp, en gardant son type.
+  void _changeAffiliation(MapObjectView object, UnitAffiliation affiliation) {
+    final icon = object.icon;
+    if (icon == null) return;
+    final next = UnitIcons.withAffiliation(icon, affiliation);
+    _saveObject(
+      _copyObject(object, properties: {
+        ...object.properties,
+        'icon': next,
+        'unitLabel': '${UnitIcons.labelOf(next)} — ${affiliation.label}',
+      }),
+    );
+    _showSnack('Passé en ${affiliation.label.toLowerCase()}');
+  }
+
+  /// Remplace le symbole par un autre, choisi dans le sélecteur complet.
+  Future<void> _changeSymbol(MapObjectView object) async {
+    final choice = await showModalBottomSheet<SymbolChoice>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => const UnitPickerSheet(),
+    );
+    if (choice == null) return;
+    _saveObject(
+      _copyObject(object, properties: {
+        ...object.properties,
+        'icon': choice.iconId,
+        'unitLabel': UnitIcons.labelOf(choice.iconId),
+      }),
     );
   }
 
@@ -1340,6 +1869,26 @@ class _MapScreenState extends State<MapScreen> {
                           style: const TextStyle(fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(width: 8),
+                        // Motif habillant le tracé (barbelés, fortifié) —
+                        // appui long pour revenir au trait uni.
+                        OutlinedButton.icon(
+                          icon: _drawPattern == null
+                              ? const Icon(Icons.gesture)
+                              : Image.asset(
+                                  UnitIcons.assetKey(_drawPattern!),
+                                  width: 22,
+                                  height: 22,
+                                ),
+                          label: Text(
+                            _drawPattern == null
+                                ? 'Motif'
+                                : UnitIcons.labelOf(_drawPattern!),
+                          ),
+                          onPressed: _pickPattern,
+                          onLongPress: () =>
+                              setState(() => _drawPattern = null),
+                        ),
+                        const SizedBox(width: 8),
                         OutlinedButton.icon(
                           icon: const Icon(Icons.close),
                           label: const Text('Annuler'),
@@ -1359,6 +1908,15 @@ class _MapScreenState extends State<MapScreen> {
                           label: const Text('Zone'),
                           onPressed: _draftPoints.length >= 3
                               ? () => _finishDrawing('zone')
+                              : null,
+                        ),
+                        const SizedBox(width: 8),
+                        // Deux taps suffisent : centre puis rayon.
+                        FilledButton.icon(
+                          icon: const Icon(Icons.hexagon_outlined),
+                          label: const Text('Octogone'),
+                          onPressed: _draftPoints.length >= 2
+                              ? () => _finishDrawing('octagon')
                               : null,
                         ),
                       ],
