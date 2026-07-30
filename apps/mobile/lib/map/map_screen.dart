@@ -42,10 +42,8 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  static const _alliesSource = 'allies';
   static const _markersSource = 'markers';
   static const _markersLayer = 'markers-icons';
-  static const _selfSource = 'self';
   static const _drawingsSource = 'drawings';
   static const _draftSource = 'draft';
   static const _objectivesSource = 'objectives';
@@ -56,14 +54,6 @@ class _MapScreenState extends State<MapScreen> {
   static const _markerIconSize = [
     'interpolate', ['linear'], ['zoom'],
     8, 0.10, 12, 0.17, 16, 0.26,
-  ];
-  static const _allyIconSize = [
-    'interpolate', ['linear'], ['zoom'],
-    8, 0.10, 12, 0.18, 16, 0.30,
-  ];
-  static const _selfIconSize = [
-    'interpolate', ['linear'], ['zoom'],
-    8, 0.12, 12, 0.21, 16, 0.34,
   ];
 
   MapLibreMapController? _controller;
@@ -677,13 +667,6 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  static Color _statusColor(LifeStatus s) => switch (s) {
-        LifeStatus.alive => const Color(0xFF4CAF50),
-        LifeStatus.dead => const Color(0xFF9E9E9E),
-        LifeStatus.medicNeeded => const Color(0xFFF44336),
-        LifeStatus.support => const Color(0xFF2196F3),
-      };
-
   /// Alliés groupés par escouade (§4), l'ordre hiérarchique étant conservé
   /// à l'intérieur de chaque groupe. Les non-affectés ferment la liste.
   List<Widget> _groupedAllies(List<MemberView> allies) {
@@ -978,50 +961,6 @@ class _MapScreenState extends State<MapScreen> {
           filter: ['==', ['get', 'pattern'], id],
         );
       }
-      await controller.addGeoJsonSource(
-        _markersSource,
-        _seeded(_markersGeoJson()),
-      );
-      // Symbole + heure de pose : l'heure fait partie de l'image (voir
-      // `_ensureMarkerImages`), pas d'une couche de texte — aucun serveur de
-      // polices n'est donc nécessaire, et le libellé survit au hors-ligne.
-      await controller.addSymbolLayer(
-        _markersSource,
-        _markersLayer,
-        const SymbolLayerProperties(
-          iconImage: ['get', 'icon'],
-          iconSize: _markerIconSize,
-          iconAllowOverlap: true,
-          iconOpacity: ['get', 'opacity'],
-        ),
-      );
-      // Alliés : insigne d'unité à contour blanc (statut → panneau Alliés).
-      await controller.addGeoJsonSource(
-        _alliesSource,
-        _seeded(_alliesGeoJson()),
-      );
-      await controller.addSymbolLayer(
-        _alliesSource,
-        'allies-icons',
-        const SymbolLayerProperties(
-          iconImage: ['get', 'icon'],
-          iconSize: _allyIconSize,
-          iconAllowOverlap: true,
-          iconOpacity: ['get', 'opacity'],
-        ),
-      );
-      // Moi : mon insigne (au choix), contour blanc épais — remplace le
-      // point bleu en partie.
-      await controller.addGeoJsonSource(_selfSource, _seeded(_selfGeoJson()));
-      await controller.addSymbolLayer(
-        _selfSource,
-        'self-icon',
-        const SymbolLayerProperties(
-          iconImage: ['get', 'icon'],
-          iconSize: _selfIconSize,
-          iconAllowOverlap: true,
-        ),
-      );
       // Drapeaux (§7.8) : couleur du camp détenteur, gris si neutre.
       await controller.addGeoJsonSource(
         _objectivesSource,
@@ -1072,6 +1011,25 @@ class _MapScreenState extends State<MapScreen> {
           lineDasharray: [3, 2],
         ),
       );
+      // Ajoutée en dernier des couches de données : les insignes se
+      // lisent au-dessus des zones et des drapeaux, jamais dessous.
+      await controller.addGeoJsonSource(
+        _markersSource,
+        _seeded(_markersGeoJson()),
+      );
+      // Symbole + heure de pose : l'heure fait partie de l'image (voir
+      // `_ensureMarkerImages`), pas d'une couche de texte — aucun serveur de
+      // polices n'est donc nécessaire, et le libellé survit au hors-ligne.
+      await controller.addSymbolLayer(
+        _markersSource,
+        _markersLayer,
+        const SymbolLayerProperties(
+          iconImage: ['get', 'icon'],
+          iconSize: _markerIconSize,
+          iconAllowOverlap: true,
+          iconOpacity: ['get', 'opacity'],
+        ),
+      );
       // Brouillon de dessin (pointillés blancs + sommets).
       await controller.addGeoJsonSource(_draftSource, _draftGeoJson());
       await controller.addLineLayer(
@@ -1116,6 +1074,13 @@ class _MapScreenState extends State<MapScreen> {
         _timeLabel(o.createdAt),
       );
 
+  /// Mon insigne, à contour blanc épais — remplace le point bleu en partie.
+  String? get _selfIcon {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    if (!_inGame || me == null) return null;
+    return '${me.unitType}_allied_self';
+  }
+
   /// Icône d'un contact révélé : son VRAI insigne, en rouge hostile.
   String _contactIcon(RevealedContact c) =>
       UnitIcons.isKnown('${c.unitType}_hostile')
@@ -1126,9 +1091,10 @@ class _MapScreenState extends State<MapScreen> {
       UnitIcons.stampId(_contactIcon(c), _timeLabel(_contactsAt));
 
   /// Tous les symboles ponctuels de la carte partagent cette couche :
-  /// marqueurs posés, contacts révélés par un drone et l'appareil lui-même.
-  /// Les regrouper évite les couches `symbol` alimentées par une source
-  /// créée vide, que le rendu natif laisse muettes.
+  /// marqueurs posés, alliés, mon propre insigne, contacts révélés par un
+  /// drone et l'appareil lui-même. Les regrouper n'est pas un raccourci :
+  /// le rendu natif laisse muette toute couche `symbol` dont la source a
+  /// été créée vide, ce qui privait d'insignes les alliés et moi-même.
   Map<String, dynamic> _markersGeoJson() => {
         'type': 'FeatureCollection',
         'features': [
@@ -1161,6 +1127,37 @@ class _MapScreenState extends State<MapScreen> {
                 'icon': _contactImageId(c),
                 'opacity': 1.0,
               },
+            },
+          // Alliés : insigne d'unité à contour blanc, estompé hors ligne
+          // (§2.4 — on garde la dernière position connue).
+          for (final m in _members.values)
+            if (m.membershipId != _myMembershipId &&
+                m.lat != null &&
+                m.lng != null)
+              {
+                'type': 'Feature',
+                'id': m.membershipId,
+                'geometry': {
+                  'type': 'Point',
+                  'coordinates': [m.lng, m.lat],
+                },
+                'properties': {
+                  'icon': '${m.unitType}_allied_outline',
+                  'opacity': m.isConnected ? 1.0 : 0.35,
+                },
+              },
+          // Moi : mon insigne, contour blanc épais.
+          if (_selfIcon != null && _lastPosition != null)
+            {
+              'type': 'Feature',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [
+                  _lastPosition!.longitude,
+                  _lastPosition!.latitude,
+                ],
+              },
+              'properties': {'icon': _selfIcon!, 'opacity': 1.0},
             },
           // L'appareil en orbite sur le bord de sa zone.
           for (final d in _drones)
@@ -1254,6 +1251,13 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
     }
+    // Insignes des alliés et le mien : variantes à contour blanc.
+    await _ensureIcons([
+      for (final m in _members.values)
+        if (m.membershipId != _myMembershipId) '${m.unitType}_allied_outline',
+      ?_selfIcon,
+    ]);
+
     // Le drone : une image par pas de cap, fabriquée une seule fois.
     for (final d in [..._drones]) {
       final icon =
@@ -1575,69 +1579,9 @@ class _MapScreenState extends State<MapScreen> {
     _kickSync();
   }
 
-  Map<String, dynamic> _alliesGeoJson() {
-    final features = <Map<String, dynamic>>[];
-    for (final m in _members.values) {
-      if (m.membershipId == _myMembershipId) continue; // moi = point bleu natif
-      if (m.lat == null || m.lng == null) continue;
-      features.add({
-        'type': 'Feature',
-        // Identifiant repris au tap : diriger vers l'allié touché.
-        'id': m.membershipId,
-        'geometry': {
-          'type': 'Point',
-          'coordinates': [m.lng, m.lat],
-        },
-        'properties': {
-          'name': m.displayName,
-          // Insigne d'unité (bleu allié, contour blanc) — défaut infanterie,
-          // command pour le commandant, modifiable par les gradés (§5).
-          'icon': '${m.unitType}_allied_outline',
-          'color':
-              '#${_statusColor(m.lifeStatus).toARGB32().toRadixString(16).substring(2)}',
-          // Estompé quand hors ligne (§2.4) : visible, mais visiblement daté.
-          'opacity': m.isConnected ? 1.0 : 0.35,
-        },
-      });
-    }
-    return {'type': 'FeatureCollection', 'features': features};
-  }
-
-  Future<void> _refreshAllies() async {
-    final controller = _controller;
-    if (controller == null || !_styleReady) return;
-    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
-    await _ensureIcons([
-      for (final m in _members.values)
-        if (m.membershipId != _myMembershipId) '${m.unitType}_allied_outline',
-      if (me != null) '${me.unitType}_allied_self',
-    ]);
-    if (!mounted) return;
-    controller.setGeoJsonSource(_alliesSource, _alliesGeoJson());
-    controller.setGeoJsonSource(_selfSource, _selfGeoJson());
-  }
-
-  /// Ma propre position, rendue avec MON insigne (contour blanc épais).
-  Map<String, dynamic> _selfGeoJson() {
-    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
-    final pos = _lastPosition;
-    if (!_inGame || me == null || pos == null) {
-      return {'type': 'FeatureCollection', 'features': []};
-    }
-    return {
-      'type': 'FeatureCollection',
-      'features': [
-        {
-          'type': 'Feature',
-          'geometry': {
-            'type': 'Point',
-            'coordinates': [pos.longitude, pos.latitude],
-          },
-          'properties': {'icon': '${me.unitType}_allied_self'},
-        },
-      ],
-    };
-  }
+  /// Les alliés vivent dans la couche des marqueurs : rafraîchir revient
+  /// donc à la reconstruire.
+  Future<void> _refreshAllies() => _refreshMarkers();
 
   /// Appui long : pose d'un marqueur d'unité à l'endroit visé (§ Phase 2).
   Future<void> _onMapLongClick(Point<double> point, LatLng latLng) async {
@@ -1696,12 +1640,14 @@ class _MapScreenState extends State<MapScreen> {
   ) {
     // Un déplacement en cours : le tap sert à reposer, pas à ouvrir la fiche.
     if (_moving != null) return;
-    if (layerId == 'allies-icons') {
-      final ally = _members[id];
-      if (ally?.lat != null) _guideTo(ally!.displayName, ally.lat!, ally.lng!);
+    if (layerId != _markersLayer && !layerId.startsWith('drawings-')) return;
+    // La couche des marqueurs porte aussi les alliés : toucher un allié
+    // ouvre la visée vers lui.
+    final ally = _members[id];
+    if (ally != null) {
+      if (ally.lat != null) _guideTo(ally.displayName, ally.lat!, ally.lng!);
       return;
     }
-    if (layerId != _markersLayer && !layerId.startsWith('drawings-')) return;
     final object = _objects[id];
     if (object == null) return;
     _showObjectSheet(object);
