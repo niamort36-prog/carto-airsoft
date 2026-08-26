@@ -111,11 +111,13 @@ Le QR encode `https://<domaine>/j/<jeton-opaque>` : scannable aussi par l'appare
 
 | Table | Champs clés |
 |---|---|
-| `api_keys` | id, owner_user_id, token_hash, label, purpose (but déclaré), permissions (`read`/`write`/`admin`), game_ids UUID[], created_at, revoked_at |
+| `api_keys` **(fait)** | id, owner_user_id, name, prefix (en clair, identifie la clé), token_hash (SHA-256 — le secret n'est rendu qu'à la création), scopes (`read` ⊂ `write` ⊂ `admin`), game_ids UUID[] (vide = toutes les parties du propriétaire), last_used_at, expires_at, revoked_at, created_at |
 
 ## 4. Surface d'API
 
-REST versionné `/v1`, OpenAPI auto-généré par NestJS. JWT Supabase dans `Authorization: Bearer` (les ApiKeys de la Phase 5 emprunteront exactement le même pipeline avec un garde supplémentaire).
+REST versionné `/v1`, OpenAPI auto-généré par NestJS. JWT Supabase dans `Authorization: Bearer` ; les clés d'API empruntent le même pipeline avec un garde supplémentaire (`X-API-Key`), comme prévu.
+
+**Ce qui ne sort jamais par la porte publique** (§7.11, détail dans [docs/API_PUBLIQUE.md](docs/API_PUBLIQUE.md)) : aucune position de joueur et aucun jeton de QR, quelle que soit la portée de la clé — sinon une clé de lecture deviendrait un avantage de terrain (§2.1) ou un moyen de capturer un drapeau à distance.
 
 ### Endpoints principaux (par phase)
 
@@ -144,7 +146,12 @@ Phase 4
   POST   /v1/games/:id/perks/:defId/activate    { cible } → validation serveur (stock, cooldown, rôle)
 
 Phase 5
-  POST   /v1/api-keys …                         gestion des clés
+  POST   /v1/api-keys                           créer une clé (secret rendu UNE fois)
+  GET    /v1/api-keys                           mes clés, sans les secrets
+  DELETE /v1/api-keys/:id                       révocation immédiate
+  GET    /v1/public/games/:id[/scores|          lecture par clé — X-API-Key
+         /objectives|/members|/captures]
+  PATCH  /v1/public/games/:id/status            lancer / arrêter (portée write)
   POST   /v1/games/:id/layers/import            GeoJSON/KML → calque natif
 ```
 

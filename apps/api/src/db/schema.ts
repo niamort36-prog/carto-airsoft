@@ -489,3 +489,43 @@ export const messages = pgTable(
 );
 
 export type Message = typeof messages.$inferSelect;
+
+/**
+ * Clés d'API publiques (§7.11).
+ *
+ * Le secret n'est JAMAIS stocké : seule son empreinte SHA-256 l'est, comme
+ * pour les jetons d'invitation. Il n'est affiché qu'une fois, à la création.
+ * Le préfixe, lui, est en clair : il sert à retrouver la ligne sans divulguer
+ * quoi que ce soit, et à reconnaître la clé dans une liste.
+ *
+ * Portée = ce que la clé peut faire (`scopes`) ET où (`gameIds`). Une liste
+ * de parties vide vaut « toutes les parties de son propriétaire » ; la
+ * vérification refait de toute façon le lien avec le propriétaire à chaque
+ * appel, donc une clé ne peut jamais atteindre la partie d'un tiers.
+ */
+export const apiKeys = pgTable(
+  'api_keys',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    ownerUserId: uuid('owner_user_id')
+      .notNull()
+      .references(() => users.id),
+    name: text('name').notNull(),
+    prefix: text('prefix').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    scopes: text('scopes').array().notNull().default([]),
+    gameIds: uuid('game_ids').array().notNull().default([]),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    uniqueIndex('api_keys_prefix_idx').on(t.prefix),
+    index('api_keys_owner_idx').on(t.ownerUserId),
+  ],
+);
+
+export type ApiKey = typeof apiKeys.$inferSelect;

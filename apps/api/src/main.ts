@@ -21,6 +21,12 @@ async function bootstrap() {
     )
     .setVersion('0.1.0')
     .addBearerAuth()
+    // Clés d'API (§7.11) : les intégrations tierces s'authentifient avec
+    // un en-tête dédié, jamais avec un compte de joueur.
+    .addApiKey(
+      { type: 'apiKey', name: 'X-API-Key', in: 'header' },
+      'api-key',
+    )
     .build();
   const document = SwaggerModule.createDocument(app, openApiConfig);
   SwaggerModule.setup('docs', app, document);

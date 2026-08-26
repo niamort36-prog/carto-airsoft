@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
+import { ApiKeysModule } from './api-keys/api-keys.module';
 import { ChatModule } from './chat/chat.module';
 import { DbModule } from './db/db.module';
 import { GamesModule } from './games/games.module';
@@ -12,6 +13,7 @@ import { MapStylesModule } from './map-styles/map-styles.module';
 import { ObjectivesModule } from './objectives/objectives.module';
 import { PermissionsApiModule } from './permissions/permissions-api.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { PublicApiModule } from './public-api/public-api.module';
 import { PerksModule } from './perks/perks.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { TeamsModule } from './teams/teams.module';
@@ -26,6 +28,7 @@ import { UsersModule } from './users/users.module';
       envFilePath: [join(__dirname, '..', '.env'), '.env'],
     }),
     EventEmitterModule.forRoot(),
+    ApiKeysModule,
     ChatModule,
     DbModule,
     GamesModule,
@@ -37,6 +40,7 @@ import { UsersModule } from './users/users.module';
     PermissionsModule,
     PermissionsApiModule,
     PerksModule,
+    PublicApiModule,
     RealtimeModule,
     TeamsModule,
     UsersModule,
