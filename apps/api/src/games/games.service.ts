@@ -25,6 +25,7 @@ import {
   objectives,
   perkDefinitions,
   perkInstances,
+  positionLogs,
   squads,
   teams,
   users,
@@ -256,14 +257,60 @@ export class GamesService {
     lng: number,
     lat: number,
   ): Promise<void> {
+    const [previous] = await this.db
+      .select({
+        lastPosition: memberships.lastPosition,
+        lastPositionAt: memberships.lastPositionAt,
+      })
+      .from(memberships)
+      .where(eq(memberships.id, membershipId));
+
+    const now = new Date();
     await this.db
       .update(memberships)
-      .set({
-        lastPosition: { x: lng, y: lat },
-        lastPositionAt: new Date(),
-      })
+      .set({ lastPosition: { x: lng, y: lat }, lastPositionAt: now })
       .where(eq(memberships.id, membershipId));
+
+    if (GamesService.shouldLog(previous, lng, lat, now)) {
+      await this.db.insert(positionLogs).values({
+        gameId,
+        membershipId,
+        position: { x: lng, y: lat },
+        recordedAt: now,
+      });
+    }
+
     await this.emitMemberUpdate(gameId, membershipId);
+  }
+
+  /** Intervalle minimal entre deux points conservés. */
+  private static readonly LOG_INTERVAL_MS = 10_000;
+  /** Déplacement minimal, en degrés (~5 m sous nos latitudes). */
+  private static readonly LOG_MIN_DELTA = 0.00005;
+
+  /**
+   * Faut-il garder ce point pour la trace ?
+   *
+   * Le flux GPS arrive plusieurs fois par minute et par joueur : tout écrire
+   * gonflerait la table sans rien apprendre. On ne garde qu'un point toutes
+   * les dix secondes, et seulement si le joueur a bougé — un immobile ne
+   * produit donc aucune ligne, ce qui est aussi la vérité de sa trace.
+   */
+  private static shouldLog(
+    previous:
+      | { lastPosition: { x: number; y: number } | null; lastPositionAt: Date | null }
+      | undefined,
+    lng: number,
+    lat: number,
+    now: Date,
+  ): boolean {
+    if (!previous?.lastPosition || !previous.lastPositionAt) return true;
+    const age = now.getTime() - previous.lastPositionAt.getTime();
+    if (age < GamesService.LOG_INTERVAL_MS) return false;
+    const moved =
+      Math.abs(previous.lastPosition.x - lng) > GamesService.LOG_MIN_DELTA ||
+      Math.abs(previous.lastPosition.y - lat) > GamesService.LOG_MIN_DELTA;
+    return moved;
   }
 
   /** Appelé par la gateway : membre ≠ connecté (§2.4), on ne supprime rien. */
@@ -411,7 +458,8 @@ export class GamesService {
     await tx.delete(perkDefinitions).where(eq(perkDefinitions.gameId, gameId));
     await tx.delete(messages).where(eq(messages.gameId, gameId));
     await tx.delete(chatChannels).where(eq(chatChannels.gameId, gameId));
-    // Les calques (§7.10) pointent vers memberships : à retirer avant elles.
+    // Trace et calques (§7.10) pointent vers memberships : avant elles.
+    await tx.delete(positionLogs).where(eq(positionLogs.gameId, gameId));
     await tx.delete(mapLayers).where(eq(mapLayers.gameId, gameId));
     await tx.delete(mapObjects).where(eq(mapObjects.gameId, gameId));
     await tx.delete(memberships).where(eq(memberships.gameId, gameId));

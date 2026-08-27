@@ -113,6 +113,7 @@ Le QR encode `https://<domaine>/j/<jeton-opaque>` : scannable aussi par l'appare
 |---|---|
 | `api_keys` **(fait)** | id, owner_user_id, name, prefix (en clair, identifie la clé), token_hash (SHA-256 — le secret n'est rendu qu'à la création), scopes (`read` ⊂ `write` ⊂ `admin`), game_ids UUID[] (vide = toutes les parties du propriétaire), last_used_at, expires_at, revoked_at, created_at |
 | `map_layers` **(fait)** | id, game_id, name, format (`geojson`/`kml`/`cot`), feature_count, imported_by_membership_id, created_at, deleted_at — les entités importées sont des `map_objects` ordinaires marqués `properties.layerId`, ce qui leur donne la synchro offline et les pierres tombales sans code en plus |
+| `position_logs` **(fait)** | id, game_id, membership_id, position, recorded_at — un point toutes les 10 s au plus, et rien si le joueur n'a pas bougé : c'est la politique de purge à l'écriture plutôt qu'un nettoyage après coup |
 
 ## 4. Surface d'API
 
@@ -158,6 +159,9 @@ Phase 5
   DELETE /v1/games/:id/layers/:layerId          retrait (pierres tombales)
   GET    /v1/games/:id/cot                      export CoT — vision du camp
   GET    /v1/public/games/:id/cot               export CoT — sans les joueurs
+  GET    /v1/games/:id/stats                    bilan (partie terminée)
+  GET    /v1/games/:id/replay                   traces horodatées (terminée)
+  GET    /v1/games/:id/my-track                 ma trace, à tout moment
 ```
 
 ### Événements WebSocket (Socket.IO, namespace `/game`)

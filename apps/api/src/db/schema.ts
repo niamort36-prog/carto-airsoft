@@ -562,3 +562,32 @@ export const mapLayers = pgTable(
 );
 
 export type MapLayer = typeof mapLayers.$inferSelect;
+
+/**
+ * Trace des positions (§7.5, statistiques post-partie).
+ *
+ * Écrite au fil du jeu, relue seulement après coup : c'est elle qui permet
+ * de rejouer une partie et d'en tirer des distances. Deux garde-fous
+ * gouvernent son volume, appliqués à l'écriture — un point toutes les
+ * quelques secondes au plus, et rien si le joueur n'a pas bougé.
+ */
+export const positionLogs = pgTable(
+  'position_logs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    membershipId: uuid('membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    position: geometry('position', { type: 'point', mode: 'xy', srid: 4326 })
+      .notNull(),
+    recordedAt: timestamp('recorded_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index('position_logs_game_time_idx').on(t.gameId, t.recordedAt)],
+);
+
+export type PositionLog = typeof positionLogs.$inferSelect;

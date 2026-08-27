@@ -119,3 +119,21 @@ pouvoir relire après coup. `GET /v1/api-keys` liste les vôtres, sans secrets.
 | 401 | Clé absente, inconnue, révoquée, expirée, ou secret faux |
 | 403 | Portée insuffisante, ou partie hors du champ de la clé |
 | 404 | Partie inexistante |
+
+---
+
+## Statistiques et rejeu
+
+Le bilan (`GET /v1/games/:id/stats`) et le rejeu (`GET /v1/games/:id/replay`)
+ne s'ouvrent **qu'une fois la partie terminée** : ils montrent les positions
+de tout le monde, ce qui donnerait pendant le jeu une vue complète du terrain
+adverse — exactement ce que le §2.1 refuse.
+
+Chacun peut en revanche consulter **sa propre trace** à tout moment
+(`GET /v1/games/:id/my-track`) : elle ne révèle que ce qu'il sait déjà.
+
+La trace est écrite au fil du jeu avec deux garde-fous, appliqués à
+l'écriture plutôt qu'en nettoyage après coup : **un point toutes les dix
+secondes au plus**, et **rien si le joueur n'a pas bougé** d'au moins
+quelques mètres. Un joueur immobile ne produit donc aucune ligne, ce qui est
+aussi la vérité de sa trace.

@@ -99,6 +99,65 @@ export interface MapObject {
   properties: Record<string, unknown>;
 }
 
+export interface TrackPoint {
+  t: number;
+  lat: number;
+  lng: number;
+}
+
+export interface ReplayUnit {
+  membershipId: string;
+  pseudo: string | null;
+  role: string;
+  unitType: string;
+  teamId: string | null;
+  teamColor: string | null;
+  track: TrackPoint[];
+}
+
+export interface ReplayEvent {
+  t: number;
+  kind: 'capture' | 'marker';
+  label: string;
+  lat: number;
+  lng: number;
+  teamId?: string | null;
+}
+
+export interface Replay {
+  game: { id: string; name: string; status: string };
+  from: number;
+  to: number;
+  units: ReplayUnit[];
+  events: ReplayEvent[];
+}
+
+export interface PlayerStats {
+  membershipId: string;
+  pseudo: string | null;
+  role: string;
+  unitType: string;
+  teamId: string | null;
+  distanceMeters: number;
+  activeSeconds: number;
+  captures: number;
+  pointsAwarded: number;
+  markersPlaced: number;
+}
+
+export interface GameStats {
+  game: { id: string; name: string; status: string };
+  players: PlayerStats[];
+  teams: Array<{
+    teamId: string;
+    name: string;
+    color: string;
+    score: number;
+    captures: number;
+    distanceMeters: number;
+  }>;
+}
+
 export const api = {
   games: () => request<GameEntry[]>('GET', '/games'),
   createGame: (name: string) => request<Game>('POST', '/games', { name }),
@@ -155,6 +214,9 @@ export const api = {
     request<MapObject[]>('POST', `/games/${gameId}/map-objects/batch`, {
       objects,
     }),
+  replay: (gameId: string) =>
+    request<Replay>('GET', `/games/${gameId}/replay`),
+  stats: (gameId: string) => request<GameStats>('GET', `/games/${gameId}/stats`),
 };
 
 export const ROLE_LABELS: Record<string, string> = {

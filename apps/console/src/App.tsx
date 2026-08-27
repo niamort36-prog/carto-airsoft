@@ -12,6 +12,7 @@ import { InvitesPanel } from './InvitesPanel';
 import { Login } from './Login';
 import { PermissionsPanel } from './PermissionsPanel';
 import { PrepMap } from './PrepMap';
+import { Replay } from './Replay';
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -39,6 +40,9 @@ function Console() {
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<TeamEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // La console sert à deux moments distincts : avant la partie pour la
+  // préparer, après pour la relire.
+  const [view, setView] = useState<'prep' | 'replay'>('prep');
 
   useEffect(() => {
     api.games().then(setGames).catch((e: Error) => setError(e.message));
@@ -236,7 +240,32 @@ function Console() {
 
       <main className="main">
         {selected ? (
-          <PrepMap key={selected.game.id} gameId={selected.game.id} />
+          <>
+            <div className="tabs">
+              <button
+                className={view === 'prep' ? 'selected' : ''}
+                onClick={() => setView('prep')}
+              >
+                Préparation
+              </button>
+              <button
+                className={view === 'replay' ? 'selected' : ''}
+                onClick={() => setView('replay')}
+                title={
+                  selected.game.status === 'finished'
+                    ? undefined
+                    : 'Disponible une fois la partie terminée'
+                }
+              >
+                Rejeu et bilan
+              </button>
+            </div>
+            {view === 'prep' ? (
+              <PrepMap key={selected.game.id} gameId={selected.game.id} />
+            ) : (
+              <Replay key={selected.game.id} gameId={selected.game.id} />
+            )}
+          </>
         ) : (
           <div className="center">
             <p className="muted">

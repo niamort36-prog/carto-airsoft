@@ -92,6 +92,13 @@
       "when": 1787770027605,
       "tag": "0012_wild_franklin_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787855533961,
+      "tag": "0013_open_lockjaw",
+      "breakpoints": true
     }
   ]
 }

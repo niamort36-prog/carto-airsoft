@@ -18,6 +18,7 @@ import { PermissionsModule } from './permissions/permissions.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { PerksModule } from './perks/perks.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { StatsModule } from './stats/stats.module';
 import { TeamsModule } from './teams/teams.module';
 import { UsersModule } from './users/users.module';
 
@@ -46,6 +47,7 @@ import { UsersModule } from './users/users.module';
     PerksModule,
     PublicApiModule,
     RealtimeModule,
+    StatsModule,
     TeamsModule,
     UsersModule,
   ],
