@@ -16,6 +16,7 @@ import {
   games,
   inviteRedemptions,
   inviteTokens,
+  mapLayers,
   mapObjects,
   memberships,
   messages,
@@ -410,6 +411,8 @@ export class GamesService {
     await tx.delete(perkDefinitions).where(eq(perkDefinitions.gameId, gameId));
     await tx.delete(messages).where(eq(messages.gameId, gameId));
     await tx.delete(chatChannels).where(eq(chatChannels.gameId, gameId));
+    // Les calques (§7.10) pointent vers memberships : à retirer avant elles.
+    await tx.delete(mapLayers).where(eq(mapLayers.gameId, gameId));
     await tx.delete(mapObjects).where(eq(mapObjects.gameId, gameId));
     await tx.delete(memberships).where(eq(memberships.gameId, gameId));
     await tx.delete(squads).where(eq(squads.gameId, gameId));

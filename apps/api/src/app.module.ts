@@ -8,6 +8,7 @@ import { DbModule } from './db/db.module';
 import { GamesModule } from './games/games.module';
 import { HealthModule } from './health/health.module';
 import { InvitesModule } from './invites/invites.module';
+import { LayersModule } from './layers/layers.module';
 import { MapObjectsModule } from './map-objects/map-objects.module';
 import { MapStylesModule } from './map-styles/map-styles.module';
 import { ObjectivesModule } from './objectives/objectives.module';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     GamesModule,
     HealthModule,
     InvitesModule,
+    LayersModule,
     MapObjectsModule,
     MapStylesModule,
     ObjectivesModule,

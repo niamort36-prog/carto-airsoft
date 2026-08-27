@@ -529,3 +529,36 @@ export const apiKeys = pgTable(
 );
 
 export type ApiKey = typeof apiKeys.$inferSelect;
+
+/**
+ * Calques importés (§7.10) — une préparation faite ailleurs (map.army,
+ * QGIS, Google Earth) déposée dans la partie.
+ *
+ * Les entités importées ne vivent pas dans une table à part : ce sont des
+ * `map_objects` ordinaires, marqués du `layerId` de leur calque. Elles
+ * empruntent donc telle quelle la synchronisation offline (§7.6), se
+ * mélangent aux données temps réel comme l'exige le §7.10, et se suppriment
+ * par les mêmes pierres tombales.
+ */
+export const mapLayers = pgTable(
+  'map_layers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    gameId: uuid('game_id')
+      .notNull()
+      .references(() => games.id),
+    name: text('name').notNull(),
+    format: text('format', { enum: ['geojson', 'kml'] }).notNull(),
+    featureCount: integer('feature_count').notNull().default(0),
+    importedByMembershipId: uuid('imported_by_membership_id')
+      .notNull()
+      .references(() => memberships.id),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  },
+  (t) => [index('map_layers_game_idx').on(t.gameId)],
+);
+
+export type MapLayer = typeof mapLayers.$inferSelect;
