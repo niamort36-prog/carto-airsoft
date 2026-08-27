@@ -46,6 +46,8 @@ export interface MemberView {
   unitType: string;
   teamId: string | null;
   squadId: string | null;
+  /** Supérieur direct dans la chaîne de commandement (§5). */
+  reportsToMembershipId: string | null;
   lifeStatus: string;
   lastPosition: { x: number; y: number } | null;
   lastPositionAt: Date | null;
@@ -462,8 +464,21 @@ export class GamesService {
     await tx.delete(positionLogs).where(eq(positionLogs.gameId, gameId));
     await tx.delete(mapLayers).where(eq(mapLayers.gameId, gameId));
     await tx.delete(mapObjects).where(eq(mapObjects.gameId, gameId));
-    await tx.delete(memberships).where(eq(memberships.gameId, gameId));
+
+    // La chaîne de commandement fait pointer des lignes les unes vers les
+    // autres : on dénoue les liens avant de supprimer, sinon Postgres
+    // refuse d'effacer un supérieur encore référencé par ses hommes.
+    await tx
+      .update(memberships)
+      .set({ reportsToMembershipId: null })
+      .where(eq(memberships.gameId, gameId));
+    await tx
+      .update(squads)
+      .set({ leaderMembershipId: null, reportsToMembershipId: null })
+      .where(eq(squads.gameId, gameId));
+    // Les escouades pointent vers des membres : elles partent en premier.
     await tx.delete(squads).where(eq(squads.gameId, gameId));
+    await tx.delete(memberships).where(eq(memberships.gameId, gameId));
     await tx.delete(teams).where(eq(teams.gameId, gameId));
     await tx.delete(games).where(eq(games.id, gameId));
   }
@@ -499,6 +514,7 @@ export class GamesService {
         unitType: memberships.unitType,
         teamId: memberships.teamId,
         squadId: memberships.squadId,
+        reportsToMembershipId: memberships.reportsToMembershipId,
         lifeStatus: memberships.lifeStatus,
         lastPosition: memberships.lastPosition,
         lastPositionAt: memberships.lastPositionAt,

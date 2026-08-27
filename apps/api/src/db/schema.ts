@@ -1,3 +1,4 @@
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   boolean,
   geometry,
@@ -83,6 +84,18 @@ export const memberships = pgTable(
     /** Rattachement (§4) : camp, puis escouade au sein du camp. */
     teamId: uuid('team_id'),
     squadId: uuid('squad_id'),
+
+    /**
+     * Chaîne de commandement (§5) : à qui cet homme répond directement.
+     *
+     * Distinct de l'escouade à dessein — un capitaine peut avoir des hommes
+     * sous ses ordres sans qu'ils portent un grade ni appartiennent à un
+     * groupe. L'escouade est une unité de manœuvre, ce lien-ci est une
+     * subordination.
+     */
+    reportsToMembershipId: uuid('reports_to_membership_id').references(
+      (): AnyPgColumn => memberships.id,
+    ),
     lifeStatus: text('life_status', {
       enum: ['alive', 'dead', 'medic_needed', 'support'],
     })
@@ -192,6 +205,21 @@ export const squads = pgTable('squads', {
     .notNull()
     .references(() => games.id),
   name: text('name').notNull(),
+
+  /** Chef d'escouade — celui qui la commande sur le terrain. */
+  leaderMembershipId: uuid('leader_membership_id').references(
+    (): AnyPgColumn => memberships.id,
+  ),
+
+  /**
+   * Capitaine (ou commandant) dont l'escouade dépend. Porté par l'escouade
+   * et non par son chef : une escouade peut être rattachée avant d'avoir un
+   * chef, et le rattachement survit au remplacement de celui-ci.
+   */
+  reportsToMembershipId: uuid('reports_to_membership_id').references(
+    (): AnyPgColumn => memberships.id,
+  ),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

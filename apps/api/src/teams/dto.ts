@@ -5,6 +5,7 @@ import {
   IsString,
   IsUUID,
   Length,
+  ValidateIf,
 } from 'class-validator';
 
 export class CreateTeamDto {
@@ -30,6 +31,37 @@ export class CreateSquadDto {
   name!: string;
 }
 
+/** Modification d'une escouade : nom, chef, rattachement. */
+export class UpdateSquadDto {
+  @ApiPropertyOptional({ example: 'Alpha', minLength: 1, maxLength: 40 })
+  @IsOptional()
+  @IsString()
+  @Length(1, 40)
+  name?: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description: 'Chef d’escouade ; null pour la laisser sans chef',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID()
+  leaderMembershipId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Capitaine ou commandant dont dépend l’escouade ; null pour la ' +
+      'détacher',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID()
+  reportsToMembershipId?: string | null;
+}
+
 export class AssignMemberDto {
   @ApiPropertyOptional({
     format: 'uuid',
@@ -46,4 +78,16 @@ export class AssignMemberDto {
   @IsOptional()
   @IsUUID()
   squadId?: string | null;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Supérieur direct — permet de prendre un homme sous ses ordres sans ' +
+      'lui donner de grade ni l’enfermer dans une escouade',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID()
+  reportsToMembershipId?: string | null;
 }

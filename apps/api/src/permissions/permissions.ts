@@ -15,6 +15,7 @@ export const PERMISSIONS = {
   MARKERS_DELETE_ANY: 'markers:delete_any',
   CHAT_COMMAND: 'chat:command',
   TEAMS_MANAGE: 'teams:manage',
+  SQUADS_MANAGE: 'squads:manage',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -30,13 +31,18 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   [PERMISSIONS.INVITES_MANAGE]: 'Gérer les invitations QR',
   [PERMISSIONS.MARKERS_DELETE_ANY]: 'Supprimer tout marqueur',
   [PERMISSIONS.CHAT_COMMAND]: 'Accès au canal commandement',
-  [PERMISSIONS.TEAMS_MANAGE]: 'Gérer équipes et escouades',
+  [PERMISSIONS.TEAMS_MANAGE]: 'Gérer les camps',
+  [PERMISSIONS.SQUADS_MANAGE]: 'Former les escouades et affecter les hommes',
 };
 
 /**
  * Matrice par défaut. Un chef d'escouade commande ses hommes (insignes) sans
  * toucher à l'organisation de la partie ; le capitaine relaie le commandant
  * sur le terrain ; le commandant décide de tout.
+ *
+ * Former une escouade et découper les camps sont deux choses différentes :
+ * un capitaine compose ses groupes et prend des hommes sous ses ordres, mais
+ * ne crée pas de camp — cela reviendrait à redécouper la partie.
  */
 export const DEFAULT_MATRIX: Record<string, Permission[]> = {
   commandant: [...ALL_PERMISSIONS],
@@ -45,6 +51,7 @@ export const DEFAULT_MATRIX: Record<string, Permission[]> = {
     PERMISSIONS.INVITES_MANAGE,
     PERMISSIONS.CHAT_COMMAND,
     PERMISSIONS.MARKERS_DELETE_ANY,
+    PERMISSIONS.SQUADS_MANAGE,
   ],
   chef_escouade: [PERMISSIONS.MEMBERS_BADGE, PERMISSIONS.CHAT_COMMAND],
   joueur: [],

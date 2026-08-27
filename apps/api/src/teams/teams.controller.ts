@@ -14,7 +14,12 @@ import {
   SupabaseAuthGuard,
   type AuthenticatedUser,
 } from '../auth/supabase-auth.guard';
-import { AssignMemberDto, CreateSquadDto, CreateTeamDto } from './dto';
+import {
+  AssignMemberDto,
+  CreateSquadDto,
+  CreateTeamDto,
+  UpdateSquadDto,
+} from './dto';
 import { TeamsService } from './teams.service';
 
 @ApiTags('teams')
@@ -55,6 +60,19 @@ export class TeamsController {
     @Body() dto: CreateSquadDto,
   ) {
     return this.teams.createSquad(auth, gameId, dto);
+  }
+
+  @Patch('squads/:squadId')
+  @ApiOperation({
+    summary: 'Modifier une escouade : nom, chef, gradé dont elle dépend',
+  })
+  updateSquad(
+    @CurrentUser() auth: AuthenticatedUser,
+    @Param('gameId', ParseUUIDPipe) gameId: string,
+    @Param('squadId', ParseUUIDPipe) squadId: string,
+    @Body() dto: UpdateSquadDto,
+  ) {
+    return this.teams.updateSquad(auth, gameId, squadId, dto);
   }
 
   @Patch('members/:membershipId/assignment')
