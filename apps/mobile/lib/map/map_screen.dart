@@ -1,10 +1,11 @@
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:math' show Point;
 
 import 'package:battery_plus/battery_plus.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_compass/flutter_compass.dart';
@@ -129,6 +130,9 @@ class _MapScreenState extends State<MapScreen> {
   /// Motif habillant le prochain tracé (id d'icône de la famille « Dessin »),
   /// ou null pour un trait uni.
   String? _drawPattern;
+
+  /// Avertissement navigateur, refermable pour la session.
+  bool _webNoticeDismissed = false;
 
   /// Images « symbole + heure » déjà enregistrées dans le style.
   final Set<String> _stampedIcons = {};
@@ -256,15 +260,22 @@ class _MapScreenState extends State<MapScreen> {
     _refreshBattery();
 
     // Boussole : le cap du boîtier, pas la route suivie — c'est celui-là
-    // qu'on lit en s'orientant, à l'arrêt comme en mouvement.
-    _compassSub = FlutterCompass.events?.listen((event) {
-      final heading = event.heading;
-      if (heading == null || !mounted) return;
-      final normalized = (heading % 360 + 360) % 360;
-      // Seuil : évite de reconstruire le bandeau à chaque micro-oscillation.
-      if (_heading != null && (normalized - _heading!).abs() < 2) return;
-      setState(() => _heading = normalized);
-    });
+    // qu'on lit en s'orientant, à l'arrêt comme en mouvement. Le greffon
+    // n'a pas d'implémentation navigateur : sur le web le bandeau affiche
+    // « --- », ce qui vaut mieux qu'un cap inventé.
+    _compassSub = kIsWeb
+        ? null
+        : FlutterCompass.events?.listen((event) {
+            final heading = event.heading;
+            if (heading == null || !mounted) return;
+            final normalized = (heading % 360 + 360) % 360;
+            // Seuil : évite de reconstruire le bandeau à chaque
+            // micro-oscillation.
+            if (_heading != null && (normalized - _heading!).abs() < 2) {
+              return;
+            }
+            setState(() => _heading = normalized);
+          });
 
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final online =
@@ -578,7 +589,9 @@ class _MapScreenState extends State<MapScreen> {
     // masquée — or c'est elle qui rend le suivi visible et fiable (§9).
     // iOS n'a pas de service de premier plan : lui demander la permission
     // de notifier ne servirait qu'à afficher une invite sans objet.
-    if (Platform.isAndroid && await Permission.notification.isDenied) {
+    if (!kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
 
@@ -2206,9 +2219,20 @@ class _MapScreenState extends State<MapScreen> {
               onGridTap: _showFullGrid,
             ),
           ),
-          if (_inGame && !_realtimeConnected)
+          // Dans un navigateur, l'app dit ce qu'elle ne sait pas faire.
+          if (kIsWeb && _inGame && !_webNoticeDismissed)
             Positioned(
               top: MediaQuery.paddingOf(context).top + 34,
+              left: 0,
+              right: 0,
+              child: WebLimitsBanner(
+                onDismiss: () => setState(() => _webNoticeDismissed = true),
+              ),
+            ),
+          if (_inGame && !_realtimeConnected)
+            Positioned(
+              top: MediaQuery.paddingOf(context).top +
+                  (kIsWeb && !_webNoticeDismissed ? 82 : 34),
               left: 0,
               right: 0,
               child: Container(

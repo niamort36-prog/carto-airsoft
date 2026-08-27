@@ -101,6 +101,38 @@ jobs:
           name: carto-airsoft-ios
           path: apps/mobile/build/ios/iphoneos/Runner.app
 
+  web:
+    name: Web
+    needs: qualite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: flutter build web --release
+        working-directory: apps/mobile
+      - name: Vérifier ce dont la version navigateur dépend
+        run: |
+          set -e
+          # La base locale exige ces deux fichiers : absents, l'application
+          # démarre puis échoue à la première écriture.
+          for f in sqlite3.wasm drift_worker.js; do
+            test -s "build/web/$f" || { echo "::error::$f manquant dans build/web"; exit 1; }
+          done
+          # Sans la bibliothèque de carte, l'écran principal reste vide.
+          grep -q 'maplibre-gl.js' build/web/index.html             || { echo "::error::maplibre-gl absent de index.html"; exit 1; }
+          echo "Dépendances du web présentes."
+        working-directory: apps/mobile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: carto-airsoft-web
+          path: apps/mobile/build/web
+
   api:
     name: API
     runs-on: ubuntu-latest

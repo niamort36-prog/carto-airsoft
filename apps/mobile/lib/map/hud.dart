@@ -123,6 +123,48 @@ class TacticalTopBar extends StatelessWidget {
       };
 }
 
+/// Bandeau d'avertissement du navigateur.
+///
+/// Un onglet est suspendu dès qu'il passe en arrière-plan ou que l'écran
+/// s'éteint : la position cesse alors d'être transmise. Les alliés voient
+/// bien le joueur passer « hors ligne » avec sa dernière position (§2.4),
+/// mais LUI doit le savoir avant d'engager une partie là-dessus — sans quoi
+/// il croira être suivi alors qu'il a disparu de la carte de son équipe.
+class WebLimitsBanner extends StatelessWidget {
+  const WebLimitsBanner({super.key, required this.onDismiss});
+
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.orange.shade900,
+      padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber, size: 18, color: Colors.white),
+          const SizedBox(width: 8),
+          const Expanded(
+            child: Text(
+              'Version navigateur : votre position n’est plus transmise dès '
+              'que l’onglet passe en arrière-plan ou que l’écran s’éteint. '
+              'Pour jouer, installez l’application.',
+              style: TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+          InkWell(
+            onTap: onDismiss,
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.close, size: 18, color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Point visé : ce qu'il faut pour s'y rendre sans quitter la carte des yeux.
 class GuidanceTarget {
   const GuidanceTarget({

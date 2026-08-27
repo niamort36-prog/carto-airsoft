@@ -1,5 +1,5 @@
-import 'dart:io' show Platform;
-
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:geolocator/geolocator.dart';
 
 /// Compromis batterie / précision (§9). Le GPS continu est le premier poste
@@ -37,7 +37,17 @@ enum TrackingMode {
   /// laisserait le suivi s'arrêter dès la mise en poche — le contraire de
   /// ce que demande le §9.
   LocationSettings toLocationSettings() {
-    if (Platform.isIOS || Platform.isMacOS) {
+    // Dans un navigateur, ni service de premier plan ni mode d'arrière-plan :
+    // le suivi s'arrête quand l'onglet passe en arrière-plan, et aucun
+    // réglage n'y changerait rien (voir docs/WEB.md).
+    if (kIsWeb) {
+      return LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: distanceFilterMeters,
+      );
+    }
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
       return AppleSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: distanceFilterMeters,
