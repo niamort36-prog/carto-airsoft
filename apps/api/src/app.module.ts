@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ApiKeysModule } from './api-keys/api-keys.module';
 import { ChatModule } from './chat/chat.module';
+import { CotModule } from './cot/cot.module';
 import { DbModule } from './db/db.module';
 import { GamesModule } from './games/games.module';
 import { HealthModule } from './health/health.module';
@@ -31,6 +32,7 @@ import { UsersModule } from './users/users.module';
     EventEmitterModule.forRoot(),
     ApiKeysModule,
     ChatModule,
+    CotModule,
     DbModule,
     GamesModule,
     HealthModule,

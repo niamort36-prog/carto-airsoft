@@ -112,7 +112,7 @@ Le QR encode `https://<domaine>/j/<jeton-opaque>` : scannable aussi par l'appare
 | Table | Champs clés |
 |---|---|
 | `api_keys` **(fait)** | id, owner_user_id, name, prefix (en clair, identifie la clé), token_hash (SHA-256 — le secret n'est rendu qu'à la création), scopes (`read` ⊂ `write` ⊂ `admin`), game_ids UUID[] (vide = toutes les parties du propriétaire), last_used_at, expires_at, revoked_at, created_at |
-| `map_layers` **(fait)** | id, game_id, name, format (`geojson`/`kml`), feature_count, imported_by_membership_id, created_at, deleted_at — les entités importées sont des `map_objects` ordinaires marqués `properties.layerId`, ce qui leur donne la synchro offline et les pierres tombales sans code en plus |
+| `map_layers` **(fait)** | id, game_id, name, format (`geojson`/`kml`/`cot`), feature_count, imported_by_membership_id, created_at, deleted_at — les entités importées sont des `map_objects` ordinaires marqués `properties.layerId`, ce qui leur donne la synchro offline et les pierres tombales sans code en plus |
 
 ## 4. Surface d'API
 
@@ -156,6 +156,8 @@ Phase 5
   POST   /v1/games/:id/layers/import            GeoJSON/KML → calque natif
   GET    /v1/games/:id/layers                   calques de la partie
   DELETE /v1/games/:id/layers/:layerId          retrait (pierres tombales)
+  GET    /v1/games/:id/cot                      export CoT — vision du camp
+  GET    /v1/public/games/:id/cot               export CoT — sans les joueurs
 ```
 
 ### Événements WebSocket (Socket.IO, namespace `/game`)

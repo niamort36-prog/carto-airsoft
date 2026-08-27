@@ -1,4 +1,10 @@
 import { XMLParser } from 'fast-xml-parser';
+import {
+  affiliationFromCotType,
+  looksLikeCot,
+  parseCot,
+  type CotEvent,
+} from '../cot/cot';
 
 /**
  * Lecture des préparations externes (§7.10).
@@ -19,6 +25,11 @@ export interface ParsedFeature {
   geometry: Record<string, unknown> | null;
   label: string | null;
   color: string | null;
+  /**
+   * Insigne exact, quand la source sait le dire (CoT porte l'affiliation
+   * dans son type). Sinon le service choisit un repli neutre.
+   */
+  icon?: string | null;
 }
 
 export class LayerParseError extends Error {}
@@ -27,21 +38,28 @@ export class LayerParseError extends Error {}
 export const MAX_FEATURES = 2000;
 
 /** Reconnaît le format sans faire confiance à l'extension du fichier. */
-export function detectFormat(content: string): 'geojson' | 'kml' {
+export function detectFormat(content: string): 'geojson' | 'kml' | 'cot' {
   const trimmed = content.trimStart();
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'geojson';
+  // Le CoT est du XML lui aussi : on le reconnaît à ses balises `event`,
+  // sans quoi il serait lu comme un KML et ne donnerait rien.
+  if (looksLikeCot(trimmed)) return 'cot';
   if (/^<\?xml|<kml[\s>]/i.test(trimmed)) return 'kml';
   throw new LayerParseError(
-    'Format non reconnu : attendu GeoJSON (JSON) ou KML (XML)',
+    'Format non reconnu : attendu GeoJSON (JSON), KML ou CoT (XML)',
   );
 }
 
 export function parseLayer(
   content: string,
-  format: 'geojson' | 'kml',
+  format: 'geojson' | 'kml' | 'cot',
 ): ParsedFeature[] {
   const features =
-    format === 'geojson' ? parseGeoJson(content) : parseKml(content);
+    format === 'geojson'
+      ? parseGeoJson(content)
+      : format === 'kml'
+        ? parseKml(content)
+        : parseCotLayer(content);
   if (features.length === 0) {
     throw new LayerParseError('Aucune entité géométrique exploitable');
   }
@@ -165,6 +183,73 @@ function pushGeometry(
     default:
       return;
   }
+}
+
+// --- CoT -------------------------------------------------------------------
+
+/**
+ * Un lot d'événements CoT devient un calque. L'affiliation portée par le
+ * type CoT est conservée : une unité hostile arrivée d'un client TAK
+ * s'affiche bien en rouge chez nous.
+ */
+function parseCotLayer(content: string): ParsedFeature[] {
+  const out: ParsedFeature[] = [];
+  for (const event of parseCot(content)) {
+    const meta = {
+      label: event.callsign ?? event.remarks ?? null,
+      color: event.color ?? null,
+      icon: iconForCot(event),
+    };
+    const links = event.links ?? [];
+    if (links.length >= 3 && isClosedRing(links)) {
+      out.push({
+        kind: 'zone',
+        lat: links[0][0],
+        lng: links[0][1],
+        geometry: {
+          type: 'Polygon',
+          coordinates: [links.map(([lat, lon]) => [lon, lat])],
+        },
+        ...meta,
+      });
+    } else if (links.length >= 2) {
+      out.push({
+        kind: 'line',
+        lat: links[0][0],
+        lng: links[0][1],
+        geometry: {
+          type: 'LineString',
+          coordinates: links.map(([lat, lon]) => [lon, lat]),
+        },
+        ...meta,
+      });
+    } else {
+      out.push({
+        kind: 'marker',
+        lat: event.point.lat,
+        lng: event.point.lon,
+        geometry: null,
+        ...meta,
+      });
+    }
+  }
+  return out;
+}
+
+/** Un anneau fermé décrit une zone ; ouvert, c'est une ligne. */
+function isClosedRing(points: Array<[number, number]>): boolean {
+  const first = points[0];
+  const last = points[points.length - 1];
+  return first[0] === last[0] && first[1] === last[1];
+}
+
+function iconForCot(event: CotEvent): string | null {
+  // Une extension maison a survécu à l'aller-retour : on retrouve l'insigne
+  // exact plutôt qu'un équivalent approché.
+  if (event.cartoIcon) return event.cartoIcon;
+  if (event.type.startsWith('b-m-p')) return 'waypoint';
+  if (!event.type.startsWith('a-')) return null;
+  return `infantry_${affiliationFromCotType(event.type)}`;
 }
 
 // --- KML -------------------------------------------------------------------

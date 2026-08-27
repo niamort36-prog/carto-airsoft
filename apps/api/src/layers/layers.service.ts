@@ -59,7 +59,7 @@ export class LayersService {
     // même permission que la préparation de partie.
     await this.permissions.assert(membership, PERMISSIONS.GAME_MANAGE);
 
-    let format: 'geojson' | 'kml';
+    let format: 'geojson' | 'kml' | 'cot';
     let features;
     try {
       format = detectFormat(content);
@@ -97,9 +97,11 @@ export class LayersService {
           properties: {
             layerId: layer.id,
             layerName: name,
-            // Le pack n'a pas d'icône pour une entité venue d'ailleurs :
-            // un point de passage neutre est le repli le plus honnête.
-            ...(f.kind === 'marker' ? { icon: 'waypoint' } : {}),
+            // Le CoT sait dire l'affiliation, pas le GeoJSON ni le KML :
+            // à défaut, un point de passage neutre est le repli honnête.
+            ...(f.kind === 'marker'
+              ? { icon: f.icon ?? 'waypoint' }
+              : {}),
             ...(f.label ? { unitLabel: f.label } : {}),
             ...(f.color ? { color: f.color } : {}),
           },

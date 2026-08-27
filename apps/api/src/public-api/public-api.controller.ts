@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -11,6 +12,7 @@ import { ApiOperation, ApiSecurity, ApiTags } from '@nestjs/swagger';
 import { ApiKeyGuard, RequireScope } from '../api-keys/api-key.guard';
 import { ApiKeysService, type ResolvedApiKey } from '../api-keys/api-keys.service';
 import { CurrentApiKey } from '../api-keys/current-api-key.decorator';
+import { CotService } from '../cot/cot.service';
 import { SetGameStatusDto } from './dto';
 import { PublicApiService } from './public-api.service';
 
@@ -32,6 +34,7 @@ export class PublicApiController {
   constructor(
     private readonly api: PublicApiService,
     private readonly keys: ApiKeysService,
+    private readonly cot: CotService,
   ) {}
 
   @Get()
@@ -91,6 +94,22 @@ export class PublicApiController {
   ) {
     await this.keys.assertGameAccess(key, gameId, 'read');
     return this.api.captures(gameId);
+  }
+
+  @Get('cot')
+  @RequireScope('read')
+  @Header('Content-Type', 'application/xml; charset=utf-8')
+  @ApiOperation({
+    summary:
+      'Terrain et drapeaux au format CoT — jamais les joueurs, comme le ' +
+      'reste de cette porte',
+  })
+  async cotExport(
+    @CurrentApiKey() key: ResolvedApiKey,
+    @Param('gameId', ParseUUIDPipe) gameId: string,
+  ) {
+    await this.keys.assertGameAccess(key, gameId, 'read');
+    return this.cot.forApiKey(gameId);
   }
 
   @Patch('status')

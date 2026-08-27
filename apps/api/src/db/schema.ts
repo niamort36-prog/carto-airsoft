@@ -548,7 +548,7 @@ export const mapLayers = pgTable(
       .notNull()
       .references(() => games.id),
     name: text('name').notNull(),
-    format: text('format', { enum: ['geojson', 'kml'] }).notNull(),
+    format: text('format', { enum: ['geojson', 'kml', 'cot'] }).notNull(),
     featureCount: integer('feature_count').notNull().default(0),
     importedByMembershipId: uuid('imported_by_membership_id')
       .notNull()
