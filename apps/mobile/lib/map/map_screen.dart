@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:math' show Point;
 
@@ -565,16 +566,19 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  /// Démarre (ou redémarre) le suivi de position avec le service de premier
-  /// plan Android : la notification persistante garde l'app vivante écran
-  /// éteint (§9), sinon les alliés voient une position figée.
+  /// Démarre (ou redémarre) le suivi de position (§9). Écran éteint, chaque
+  /// système a son moyen : service de premier plan et notification sur
+  /// Android, mode d'arrière-plan `location` sur iOS — voir
+  /// [TrackingMode.toLocationSettings].
   Future<void> _startTracking() async {
     await _positionSub?.cancel();
     _heartbeat?.cancel();
 
     // Android 13+ : sans cette autorisation la notification du service est
     // masquée — or c'est elle qui rend le suivi visible et fiable (§9).
-    if (await Permission.notification.isDenied) {
+    // iOS n'a pas de service de premier plan : lui demander la permission
+    // de notifier ne servirait qu'à afficher une invite sans objet.
+    if (Platform.isAndroid && await Permission.notification.isDenied) {
       await Permission.notification.request();
     }
 

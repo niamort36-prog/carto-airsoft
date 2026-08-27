@@ -1,0 +1,87 @@
+# Podfile — versionné à dessein plutôt que laissé à la génération.
+#
+# Deux réglages ne peuvent pas être devinés par Flutter et décideraient
+# autrement du sort de l'app à la revue App Store :
+#
+#  1. la version minimale d'iOS, imposée ici par MapLibre (13.0) ;
+#  2. les permissions compilées : `permission_handler` embarque par défaut
+#     TOUS ses gestionnaires, donc du code qui interroge le carnet
+#     d'adresses, la santé, les rappels… Apple demande alors pourquoi une
+#     application d'airsoft lit les contacts, et refuse la soumission. On
+#     n'active que ce que l'application utilise vraiment.
+
+platform :ios, '13.0'
+
+# CocoaPods n'analyse pas les statistiques d'usage.
+ENV['COCOAPODS_DISABLE_STATS'] = 'true'
+
+project 'Runner', {
+  'Debug' => :debug,
+  'Profile' => :release,
+  'Release' => :release,
+}
+
+def flutter_root
+  generated_xcode_build_settings_path = File.expand_path(
+    File.join('..', 'Flutter', 'Generated.xcconfig'), __FILE__
+  )
+  unless File.exist?(generated_xcode_build_settings_path)
+    raise "#{generated_xcode_build_settings_path} introuvable. Lancez d'abord `flutter pub get`."
+  end
+
+  File.foreach(generated_xcode_build_settings_path) do |line|
+    matches = line.match(/FLUTTER_ROOT\=(.*)/)
+    return matches[1].strip if matches
+  end
+  raise "FLUTTER_ROOT absent de Generated.xcconfig. Supprimez-le puis relancez `flutter pub get`."
+end
+
+require File.expand_path(File.join('packages', 'flutter_tools', 'bin', 'podhelper'), flutter_root)
+
+flutter_ios_podfile_setup
+
+target 'Runner' do
+  use_frameworks!
+  use_modular_headers!
+
+  flutter_install_all_ios_pods File.dirname(File.realpath(__FILE__))
+
+  target 'RunnerTests' do
+    inherit! :search_paths
+  end
+end
+
+post_install do |installer|
+  installer.pods_project.targets.each do |target|
+    flutter_additional_ios_build_settings(target)
+
+    target.build_configurations.each do |config|
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
+
+      # Ce que l'application demande réellement, et rien d'autre.
+      config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= [
+        '$(inherited)',
+        'PERMISSION_LOCATION=1',
+        'PERMISSION_LOCATION_WHENINUSE=1',
+        'PERMISSION_NOTIFICATIONS=1',
+        'PERMISSION_CAMERA=1',
+        'PERMISSION_SENSORS=1',
+
+        # Explicitement écartés : leur code n'est pas compilé, donc aucune
+        # API correspondante n'apparaît dans le binaire soumis.
+        'PERMISSION_EVENTS=0',
+        'PERMISSION_EVENTS_FULL_ACCESS=0',
+        'PERMISSION_REMINDERS=0',
+        'PERMISSION_CONTACTS=0',
+        'PERMISSION_MICROPHONE=0',
+        'PERMISSION_SPEECH_RECOGNIZER=0',
+        'PERMISSION_PHOTOS=0',
+        'PERMISSION_MEDIA_LIBRARY=0',
+        'PERMISSION_BLUETOOTH=0',
+        'PERMISSION_APP_TRACKING_TRANSPARENCY=0',
+        'PERMISSION_CRITICAL_ALERTS=0',
+        'PERMISSION_ASSISTANT=0',
+      ]
+    end
+  end
+end

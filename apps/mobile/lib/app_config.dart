@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 /// Configuration de build, surchargée via `--dart-define` :
 /// flutter run --dart-define=SUPABASE_ANON_KEY=sb_publishable_xxx
 class AppConfig {
@@ -14,13 +16,20 @@ class AppConfig {
     defaultValue: 'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb',
   );
 
-  /// URL de l'API arbitre.
-  /// 10.0.2.2 = localhost du PC vu depuis l'émulateur Android ;
-  /// sur téléphone réel, passer l'IP LAN du PC via --dart-define=API_BASE_URL=…
-  static const apiBaseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:3000/v1',
-  );
+  /// URL de l'API arbitre, surchargeable au build.
+  static const _configuredApiBaseUrl = String.fromEnvironment('API_BASE_URL');
+
+  /// URL effective. Les deux simulateurs joignent le PC de développement
+  /// par des adresses différentes : l'émulateur Android passe par 10.0.2.2,
+  /// le simulateur iOS partage le réseau du Mac et voit donc `localhost`.
+  /// Sur téléphone réel, passer l'IP du poste :
+  /// `--dart-define=API_BASE_URL=http://192.168.x.x:3000/v1`.
+  static String get apiBaseUrl {
+    if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
+    return Platform.isAndroid
+        ? 'http://10.0.2.2:3000/v1'
+        : 'http://localhost:3000/v1';
+  }
 
   static bool get isAuthConfigured => supabaseAnonKey.isNotEmpty;
 }

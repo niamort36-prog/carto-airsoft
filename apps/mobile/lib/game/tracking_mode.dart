@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:geolocator/geolocator.dart';
 
 /// Compromis batterie / précision (§9). Le GPS continu est le premier poste
@@ -26,20 +28,44 @@ enum TrackingMode {
         orElse: () => TrackingMode.balanced,
       );
 
-  /// Réglages de la plateforme, avec service de premier plan sur Android :
-  /// la notification persistante est ce qui empêche le système de geler
-  /// l'app quand l'écran s'éteint.
-  LocationSettings toLocationSettings() => AndroidSettings(
+  /// Réglages de la plateforme.
+  ///
+  /// Les deux systèmes gardent une app vivante écran éteint, mais par des
+  /// moyens opposés : Android exige un service de premier plan avec sa
+  /// notification persistante, iOS exige le mode d'arrière-plan `location`
+  /// et l'autorisation « Toujours ». Servir les réglages Android à iOS
+  /// laisserait le suivi s'arrêter dès la mise en poche — le contraire de
+  /// ce que demande le §9.
+  LocationSettings toLocationSettings() {
+    if (Platform.isIOS || Platform.isMacOS) {
+      return AppleSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: distanceFilterMeters,
-        intervalDuration: Duration(seconds: intervalSeconds),
-        foregroundNotificationConfig: ForegroundNotificationConfig(
-          notificationTitle: 'Carto Airsoft — partie en cours',
-          notificationText:
-              'Votre position est partagée avec vos alliés ($label).',
-          notificationChannelName: 'Suivi de position',
-          enableWakeLock: true,
-          setOngoing: true,
-        ),
+        // Sans cela, iOS suspend les mises à jour dès que l'app passe en
+        // arrière-plan : les alliés verraient une position figée (§2.4).
+        allowBackgroundLocationUpdates: true,
+        // La pastille bleue « position utilisée » reste visible : le joueur
+        // sait qu'il est suivi, et on ne le suit jamais à son insu.
+        showBackgroundLocationIndicator: true,
+        // iOS coupe volontiers le GPS quand il croit l'utilisateur immobile.
+        // En airsoft, une immobilité de dix minutes est une embuscade, pas
+        // une fin de trajet.
+        pauseLocationUpdatesAutomatically: false,
+        activityType: ActivityType.fitness,
       );
+    }
+    return AndroidSettings(
+      accuracy: LocationAccuracy.high,
+      distanceFilter: distanceFilterMeters,
+      intervalDuration: Duration(seconds: intervalSeconds),
+      foregroundNotificationConfig: ForegroundNotificationConfig(
+        notificationTitle: 'Carto Airsoft — partie en cours',
+        notificationText:
+            'Votre position est partagée avec vos alliés ($label).',
+        notificationChannelName: 'Suivi de position',
+        enableWakeLock: true,
+        setOngoing: true,
+      ),
+    );
+  }
 }

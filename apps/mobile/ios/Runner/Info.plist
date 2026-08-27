@@ -24,6 +24,32 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<!-- Autorisations (§9). iOS interrompt l'application si elle demande une
+	     permission sans avoir déclaré POURQUOI : ces textes sont ceux que le
+	     joueur lit dans l'invite, ils doivent dire la vérité. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Votre position est partagée avec vos alliés pendant la partie, et sert à vous situer sur la carte.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Pour que vos alliés continuent de vous voir téléphone en poche ou écran éteint, l’autorisation « Toujours » est nécessaire. Le partage s’arrête quand vous quittez la partie.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Pour que vos alliés continuent de vous voir téléphone en poche ou écran éteint, l’autorisation « Toujours » est nécessaire. Le partage s’arrête quand vous quittez la partie.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>La caméra sert uniquement à scanner les QR codes : rejoindre une partie, capturer un drapeau, récupérer un bonus.</string>
+	<key>NSMotionUsageDescription</key>
+	<string>La boussole affiche votre cap sur le bandeau de la carte.</string>
+
+	<!-- Suivi écran éteint : là où Android emploie un service de premier plan,
+	     iOS exige ce mode. Sans lui, la position se fige dès la mise en poche
+	     et les alliés voient un joueur immobile (§2.4). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
+
+	<!-- Les tuiles et l'API sont servies en HTTPS ; aucune exception ATS. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>
