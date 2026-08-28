@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Options d'export de l'archive iOS vers un .ipa signé.
+
+  Les deux valeurs entre __ __ sont remplacées au moment de la construction
+  par le workflow `ios-testflight.yml`, à partir des secrets du dépôt : elles
+  identifient le compte Apple et ne doivent PAS être écrites en clair ici.
+
+  Ce fichier ne sert qu'à la voie payante (TestFlight / App Store). La voie
+  gratuite passe par un .ipa non signé et un outil de sideload, sans
+  signature côté CI.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>method</key>
+  <string>app-store-connect</string>
+
+  <key>teamID</key>
+  <string>__TEAM_ID__</string>
+
+  <!-- Signature manuelle : sur un runner de CI, personne n'est connecté à
+       un compte Apple, la signature automatique n'a donc rien pour
+       fonctionner. -->
+  <key>signingStyle</key>
+  <string>manual</string>
+
+  <key>provisioningProfiles</key>
+  <dict>
+    <key>com.cartoairsoft.cartoAirsoft</key>
+    <string>__PROFILE_NAME__</string>
+  </dict>
+
+  <!-- Les symboles permettent à App Store Connect de rendre lisibles les
+       rapports de plantage. -->
+  <key>uploadSymbols</key>
+  <true/>
+
+  <key>destination</key>
+  <string>export</string>
+</dict>
+</plist>

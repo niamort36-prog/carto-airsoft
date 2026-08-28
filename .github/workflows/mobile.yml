@@ -96,10 +96,25 @@ jobs:
           done
           echo "Déclarations présentes."
         working-directory: apps/mobile/ios
+      # Empaqueté en .ipa : c'est le format qu'un outil de sideload
+      # (Sideloadly, AltStore) sait signer avec un Apple ID GRATUIT et poser
+      # sur un iPhone — depuis Windows, sans Mac et sans les 99 €/an. Le
+      # .app brut, lui, ne s'installe nulle part.
+      - name: Empaqueter un .ipa non signé
+        run: |
+          set -e
+          cd build/ios/iphoneos
+          rm -rf Payload
+          mkdir Payload
+          cp -R Runner.app Payload/
+          zip -qry ../../../carto-airsoft-unsigned.ipa Payload
+          cd ../../..
+          ls -lh carto-airsoft-unsigned.ipa
+        working-directory: apps/mobile
       - uses: actions/upload-artifact@v4
         with:
-          name: carto-airsoft-ios
-          path: apps/mobile/build/ios/iphoneos/Runner.app
+          name: carto-airsoft-ios-non-signe
+          path: apps/mobile/carto-airsoft-unsigned.ipa
 
   web:
     name: Web

@@ -19,7 +19,9 @@ plateforme** et les **greffons natifs**. C'est là que se joue le
 | Réglages de position propres à iOS | faits |
 | `Podfile` versionné (iOS 13, permissions compilées) | fait |
 | Intégration continue construisant Android **et** iOS | faite |
-| **Compilation réellement effectuée** | **jamais** |
+| Chaîne de signature TestFlight | écrite, inerte sans secrets |
+| Empaquetage `.ipa` pour sideload gratuit | fait |
+| **Compilation réellement effectuée** | **à la première poussée sur GitHub** |
 
 La dernière ligne est la plus importante : **rien de tout cela n'a pu être
 compilé**, faute de macOS. Voir « Ce qui reste à faire sur un Mac ».
@@ -80,27 +82,111 @@ Trois mécanismes, du plus automatique au plus humain :
    un greffon : a-t-il un support iOS ? quelle version minimale exige-t-il ?
    demande-t-il une déclaration dans l'`Info.plist` ?
 
-## Ce qui reste à faire sur un Mac
+## Compiler sans posséder de Mac
 
-Aucune de ces étapes n'est possible depuis Windows.
+Xcode n'existe que sur macOS, et macOS ne peut légalement tourner que sur du
+matériel Apple. Mais **compiler** ne demande pas de posséder la machine :
+GitHub prête des runners macOS, et le job `ios` de `mobile.yml` s'en sert.
+Sur dépôt **public**, ces minutes sont gratuites et illimitées ; sur dépôt
+privé elles sont facturées dix fois le tarif Linux.
 
-1. `cd apps/mobile/ios && pod install` — première résolution CocoaPods.
-2. `flutter build ios --no-codesign` — la vraie première compilation. C'est
-   ici qu'apparaîtront les incompatibilités éventuelles de greffons.
-3. Ouvrir `Runner.xcworkspace`, choisir l'équipe de signature, vérifier que
-   les capacités **Background Modes → Location updates** sont bien cochées.
-4. Essayer sur un iPhone réel : autoriser « Toujours », mettre le téléphone
-   en poche, vérifier chez un allié que la position continue d'avancer.
-5. **Scanner un QR avec la caméra** — jamais validé nulle part, l'émulateur
-   Android n'ayant pas de caméra utilisable.
+Il faut donc, une fois pour toutes, un dépôt distant :
+
+```bash
+git remote add origin https://github.com/<vous>/carto-airsoft.git
+git push -u origin phase-1-socle
+```
+
+La CI se déclenche sur **toutes** les branches (`branches: ['**']`) : nul
+besoin d'être sur `main` pour obtenir un build. À la première poussée, elle
+compile Android, iOS et la version navigateur, et fait tourner les tests.
+C'est là qu'apparaîtront les éventuelles incompatibilités de greffons —
+sans qu'aucun Mac n'ait été acheté.
+
+## La voie gratuite : son propre iPhone, sans abonnement
+
+Le job iOS produit un artefact `carto-airsoft-ios-non-signe` : un `.ipa`
+compilé mais non signé. Un Apple ID **gratuit** suffit à le signer et à le
+poser sur son propre téléphone, et cela se fait **depuis Windows**.
+
+1. Onglet **Actions** du dépôt → dernier build **Mobile** → télécharger
+   l'artefact `carto-airsoft-ios-non-signe`.
+2. Sur le PC, installer **Sideloadly** (ou **AltStore**). Brancher l'iPhone
+   en USB.
+3. Glisser le `.ipa`, saisir son Apple ID gratuit, installer.
+4. Sur l'iPhone : *Réglages → Général → VPN et gestion de l'appareil* →
+   faire confiance au développeur.
+
+Ce que la gratuité coûte, et qu'il vaut mieux savoir avant :
+
+| Limite | Conséquence |
+|---|---|
+| L'app **expire au bout de 7 jours** | il faut la réinstaller ; AltStore le fait tout seul si le PC reste allumé sur le même réseau |
+| 3 applications signées à la fois | sans objet ici |
+| 10 identifiants d'app par semaine | sans objet ici |
+| **Chaque testeur doit sideloader lui-même** | c'est la vraie limite : impossible de distribuer à une équipe |
+
+Le suivi en arrière-plan, la caméra et la boussole fonctionnent
+normalement : ce sont des autorisations standard, pas des droits réservés
+aux comptes payants. La voie gratuite permet donc de **valider sur le
+terrain** ce qui n'a jamais pu l'être — le scan QR à la caméra, et la
+position qui continue d'avancer téléphone en poche.
+
+## La voie payante : TestFlight, pour faire jouer l'équipe
+
+Distribuer à d'autres joueurs exige le **Apple Developer Program** (99 €/an)
+et passe par TestFlight, qui accepte jusqu'à 10 000 testeurs.
+
+Le workflow `.github/workflows/ios-testflight.yml` fait tout : trousseau
+jetable, signature, archive, envoi. Il ne se déclenche jamais seul — publier
+est une décision — et reste **inerte tant que les secrets sont absents**, en
+s'arrêtant sur un message clair plutôt qu'en échouant à chaque poussée.
+
+Sept secrets à renseigner dans *Settings → Secrets and variables → Actions* :
+
+| Secret | Où le trouver |
+|---|---|
+| `IOS_CERTIFICATE_P12` | certificat de distribution exporté en `.p12`, encodé en base64 |
+| `IOS_CERTIFICATE_PASSWORD` | le mot de passe choisi à l'export |
+| `IOS_PROVISIONING_PROFILE` | profil App Store du portail développeur, en base64 |
+| `IOS_PROVISIONING_PROFILE_NAME` | son nom exact, tel qu'affiché sur le portail |
+| `IOS_TEAM_ID` | identifiant d'équipe (10 caractères), en haut du portail |
+| `APPSTORE_API_KEY_ID` | clé d'API App Store Connect → *Users and Access → Integrations* |
+| `APPSTORE_API_ISSUER_ID` | l'émetteur affiché sur la même page |
+| `APPSTORE_API_PRIVATE_KEY` | contenu du fichier `.p8` téléchargé **une seule fois** |
+
+Le numéro de build vient du compteur de la CI (`github.run_number`) :
+App Store Connect refuse deux envois portant le même, et le prendre du
+dépôt obligerait à un commit par publication.
+
+⚠️ **La position en arrière-plan est le point le plus examiné en revue.**
+Apple demandera pourquoi l'app déclare `UIBackgroundModes: location` et
+réclame l'autorisation « Toujours ». La réponse est celle du §9 : les
+alliés doivent voir un joueur téléphone en poche, sinon la carte ment.
+Prévoir au moins un aller-retour avec le comité de revue.
+
+⚠️ **L'icône est encore celle de Flutter par défaut.** Acceptée par
+TestFlight, refusée sur l'App Store. Il faut une image carrée 1024 × 1024
+pour générer les 16 tailles.
+
+## Ce qui exige encore un Mac en main
+
+Trois choses seulement, toutes optionnelles :
+
+1. **Déboguer en direct** sur un iPhone branché (points d'arrêt, profileur).
+2. **Ouvrir `Runner.xcworkspace`** pour inspecter les capacités à l'œil —
+   la CI les vérifie déjà automatiquement dans l'`Info.plist`.
+3. **Éprouver le quota de cartes hors-ligne** sur un appareil Apple.
 
 ## Points à surveiller
 
-* **Identifiant de bundle** : iOS porte `com.cartoairsoft.cartoAirsoft`
-  (majuscule héritée de la génération Flutter), Android
-  `com.cartoairsoft.carto_airsoft`. Sans conséquence technique, mais à
-  uniformiser **avant** la première publication — après, l'identifiant est
-  définitif sur l'App Store.
+* **Identifiant de bundle** : iOS porte `com.cartoairsoft.cartoAirsoft`,
+  Android `com.cartoairsoft.carto_airsoft`. Ils ne pourront **jamais** être
+  identiques : Apple n'accepte que lettres, chiffres, tirets et points — le
+  souligné d'Android y est interdit. Ce qui compte est que celui d'iOS soit
+  arrêté **avant** la première publication : après, il est définitif sur
+  l'App Store. Il est écrit à trois endroits — `project.pbxproj`,
+  `ExportOptions.plist` et le workflow TestFlight.
 * **Version minimale iOS 13**, imposée par MapLibre. Elle couvre l'iPhone 6s
   et au-delà.
 * **Fonds de carte** : les tuiles IGN et OSM sont servies en HTTPS, aucune
