@@ -53,6 +53,31 @@ class GameSummary {
 }
 
 /// Clés de permission (miroir du catalogue serveur).
+/// Une escouade telle que l'app la manipule en partie.
+class SquadSummary {
+  const SquadSummary({
+    required this.id,
+    required this.name,
+    required this.teamId,
+    this.leaderMembershipId,
+    this.reportsToMembershipId,
+    this.note,
+  });
+
+  final String id;
+  final String name;
+  final String teamId;
+
+  /// Chef d'escouade, s'il en a un.
+  final String? leaderMembershipId;
+
+  /// Capitaine ou commandant dont l'escouade dépend.
+  final String? reportsToMembershipId;
+
+  /// Étiquette libre du groupe (fréquence radio du réseau, indicatif).
+  final String? note;
+}
+
 abstract final class Perm {
   static const gameManage = 'game:manage';
   static const membersPromote = 'members:promote';
@@ -62,6 +87,7 @@ abstract final class Perm {
   static const markersDeleteAny = 'markers:delete_any';
   static const chatCommand = 'chat:command';
   static const teamsManage = 'teams:manage';
+  static const squadsManage = 'squads:manage';
 }
 
 /// Statuts de vie (§7.5) — mêmes valeurs que l'API.
@@ -481,6 +507,8 @@ class MemberView {
     required this.unitType,
     this.teamId,
     this.squadId,
+    this.reportsToMembershipId,
+    this.note,
     required this.lifeStatus,
     required this.lat,
     required this.lng,
@@ -499,6 +527,14 @@ class MemberView {
   /// Rattachement (§4) — null tant que le joueur n'est pas affecté.
   final String? teamId;
   final String? squadId;
+
+  /// Supérieur direct (§5) : un capitaine peut avoir des hommes sous ses
+  /// ordres sans qu'ils portent un grade ni appartiennent à une escouade.
+  final String? reportsToMembershipId;
+
+  /// Étiquette libre affichée à côté de l'insigne : fréquence radio,
+  /// indicatif, numéro de véhicule.
+  final String? note;
   final LifeStatus lifeStatus;
   final double? lat;
   final double? lng;
@@ -518,6 +554,8 @@ class MemberView {
       unitType: json['unitType'] as String? ?? 'infantry',
       teamId: json['teamId'] as String?,
       squadId: json['squadId'] as String?,
+      reportsToMembershipId: json['reportsToMembershipId'] as String?,
+      note: json['note'] as String?,
       lifeStatus: LifeStatus.fromWire(json['lifeStatus'] as String),
       // PostGIS : x = longitude, y = latitude.
       lng: (pos?['x'] as num?)?.toDouble(),

@@ -138,6 +138,153 @@ enum PointType {
   final String label;
 }
 
+/// Champs modificateurs de la norme OTAN (APP-6 / MIL-STD-2525) dessinés
+/// autour d'un symbole, chacun à l'emplacement que la norme lui assigne.
+///
+/// La POSITION porte le sens : la même chaîne à gauche et à droite ne dit
+/// pas la même chose à qui lit la carte. D'où des noms de champs plutôt
+/// qu'un vague « texte du haut ».
+class SymbolFields {
+  const SymbolFields({
+    this.dtg,
+    this.dtgColor,
+    this.designation,
+    this.info,
+    this.higherFormation,
+    this.echelon,
+    this.hostile = false,
+  });
+
+  /// Champ W — groupe date-heure. Colonne de gauche, en haut.
+  final String? dtg;
+
+  /// Couleur du groupe date-heure : celle du camp du symbole.
+  final Color? dtgColor;
+
+  /// Champ T — désignation propre : indicatif, nom du groupe. À gauche,
+  /// sous le groupe date-heure.
+  final String? designation;
+
+  /// Champ H — information complémentaire. C'est l'emplacement normalisé
+  /// du texte libre : fréquence radio, immatriculation, consigne courte.
+  final String? info;
+
+  /// Champ M — formation supérieure (l'escouade dont dépend l'homme). À
+  /// droite, sous l'information complémentaire.
+  final String? higherFormation;
+
+  /// Champ B — échelon (taille de l'unité). Dessiné au-dessus du cadre.
+  final SymbolEchelon? echelon;
+
+  /// Champ N — la mention « ENY » que la norme impose aux symboles
+  /// hostiles, en bas à droite. Redondante avec la couleur, et c'est le
+  /// but : elle survit à une impression en noir et blanc.
+  final bool hostile;
+
+  static String? _net(String? value) {
+    final texte = value?.trim() ?? '';
+    return texte.isEmpty ? null : texte;
+  }
+
+  bool get isEmpty =>
+      _net(dtg) == null &&
+      _net(designation) == null &&
+      _net(info) == null &&
+      _net(higherFormation) == null &&
+      echelon == null &&
+      !hostile;
+
+  /// Clé d'image. Le rendu natif garde la PREMIÈRE image enregistrée sous
+  /// un identifiant : deux jeux de champs différents doivent donner deux
+  /// clés, sinon la seconde n'apparaîtrait jamais.
+  String get key => [
+        _net(dtg) ?? '',
+        _net(designation) ?? '',
+        _net(info) ?? '',
+        _net(higherFormation) ?? '',
+        echelon?.name ?? '',
+        if (hostile) 'ENY',
+      ].join('|');
+}
+
+/// Forme d'une marque d'échelon, dans l'ordre où la norme les fait monter :
+/// l'ovale de l'équipe, les points du groupe et de la section, les barres de
+/// la compagnie au régiment, les croix de la brigade à l'armée.
+enum EchelonMark { equipe, point, barre, croix }
+
+/// Échelon OTAN (champ B) : la marque portée au-dessus du cadre, qui dit la
+/// taille de l'unité.
+///
+/// Dessinée en formes pleines et non en caractères : un « ● » dépend d'une
+/// police qui peut manquer sur l'appareil, un cercle tracé au pinceau ne
+/// dépend de rien.
+///
+/// La norme prévoit deux marques que l'app ne pose jamais, faute de la
+/// donnée qui les distingue : le double point (groupe AVEC mitrailleuses —
+/// c'est un armement, pas un effectif) et le quadruple point (Staffel,
+/// propre à l'armée allemande).
+enum SymbolEchelon {
+  /// Équipe ou binôme — 2 à 5 hommes.
+  equipe(EchelonMark.equipe, 1, 'Équipe'),
+
+  /// Groupe ou escouade — 8 à 12 hommes.
+  groupe(EchelonMark.point, 1, 'Groupe'),
+
+  /// Section — 25 à 40 hommes, deux escouades ou plus.
+  section(EchelonMark.point, 3, 'Section'),
+
+  /// Compagnie — 60 à 250 hommes, deux sections ou plus.
+  compagnie(EchelonMark.barre, 1, 'Compagnie'),
+
+  /// Bataillon — 300 à 1 000 hommes.
+  bataillon(EchelonMark.barre, 2, 'Bataillon'),
+
+  /// Régiment ou groupement — 2 000 à 3 000 hommes.
+  regiment(EchelonMark.barre, 3, 'Régiment'),
+
+  /// Brigade — 3 000 à 5 000 hommes.
+  brigade(EchelonMark.croix, 1, 'Brigade'),
+
+  /// Division — 10 000 à 20 000 hommes.
+  division(EchelonMark.croix, 2, 'Division'),
+
+  /// Corps d'armée — 30 000 à 50 000 hommes.
+  corps(EchelonMark.croix, 3, 'Corps'),
+
+  /// Armée — 50 000 hommes et plus.
+  armee(EchelonMark.croix, 4, 'Armée');
+
+  const SymbolEchelon(this.mark, this.count, this.label);
+
+  /// Forme de la marque.
+  final EchelonMark mark;
+
+  /// Combien de fois elle se répète.
+  final int count;
+
+  /// Nom de l'échelon, pour l'interface.
+  final String label;
+
+  /// Échelon d'une unité d'après son effectif, suivant les fourchettes de
+  /// la norme. En dessous de deux hommes il n'y a pas d'unité à qualifier.
+  ///
+  /// Les bornes comblent les trous du tableau officiel (il ne dit rien de
+  /// 6 ou 7 hommes) en prolongeant l'échelon inférieur jusqu'au suivant.
+  static SymbolEchelon? forHeadcount(int count) {
+    if (count < 2) return null;
+    if (count <= 5) return SymbolEchelon.equipe;
+    if (count <= 12) return SymbolEchelon.groupe;
+    if (count <= 40) return SymbolEchelon.section;
+    if (count <= 250) return SymbolEchelon.compagnie;
+    if (count <= 1000) return SymbolEchelon.bataillon;
+    if (count <= 3000) return SymbolEchelon.regiment;
+    if (count <= 5000) return SymbolEchelon.brigade;
+    if (count <= 20000) return SymbolEchelon.division;
+    if (count <= 50000) return SymbolEchelon.corps;
+    return SymbolEchelon.armee;
+  }
+}
+
 class UnitIcons {
   /// Combinaisons absentes du pack livré (aucune à ce jour).
   static const _missing = <String>{};
@@ -323,8 +470,72 @@ class UnitIcons {
     return data!.buffer.asUint8List();
   }
 
-  /// Identifiant d'image « symbole + heure » — une image par couple.
-  static String stampId(String iconId, String time) => '$iconId@$time';
+  /// Identifiant d'une image composée : le symbole et les champs OTAN
+  /// dessinés autour. Deux jeux de champs distincts donnent deux images.
+  static String fieldedId(String iconId, SymbolFields fields) =>
+      fields.isEmpty ? iconId : '$iconId@${fields.key}';
+
+  /// Identifiant d'image d'un marqueur d'escouade.
+  static String squadId(String squadKey, int count, SymbolFields fields) =>
+      fieldedId('squad@$squadKey@$count', fields);
+
+  /// PNG du cadre d'une escouade : le rectangle ami de la norme OTAN —
+  /// fond bleu clair, trait noir — portant son effectif.
+  ///
+  /// Mêmes proportions et mêmes couleurs que les insignes du pack, pour
+  /// qu'un groupe et un homme se lisent comme deux objets de la même
+  /// famille. Nom, échelon et étiquette viennent ensuite par [fieldedPng],
+  /// aux emplacements que la norme leur donne.
+  ///
+  /// Ce cadre remplace les insignes individuels quand la carte est trop
+  /// dézoomée pour les distinguer — mieux vaut un groupe lisible que six
+  /// symboles empilés qui ne disent plus qui est où.
+  static Future<Uint8List> squadFramePng(int count) async {
+    // Le format des symboles du pack (316 × 216).
+    const width = 316.0;
+    const height = 216.0;
+    const trait = 14.0;
+
+    final effectif = TextPainter(
+      textDirection: TextDirection.ltr,
+      text: TextSpan(
+        text: '$count',
+        style: const TextStyle(
+          fontSize: 128,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF000000),
+        ),
+      ),
+    )..layout();
+
+    final recorder = ui.PictureRecorder();
+    final canvas = ui.Canvas(recorder);
+    final rect = ui.Rect.fromLTWH(
+      trait / 2,
+      trait / 2,
+      width - trait,
+      height - trait,
+    );
+    canvas.drawRect(rect, ui.Paint()..color = const ui.Color(0xFF80E0FF));
+    canvas.drawRect(
+      rect,
+      ui.Paint()
+        ..color = const ui.Color(0xFF000000)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = trait,
+    );
+    effectif.paint(
+      canvas,
+      Offset((width - effectif.width) / 2, (height - effectif.height) / 2),
+    );
+
+    final rendered = await recorder
+        .endRecording()
+        .toImage(width.round(), height.round());
+    final data = await rendered.toByteData(format: ui.ImageByteFormat.png);
+    rendered.dispose();
+    return data!.buffer.asUint8List();
+  }
 
   /// Identifiant d'image « symbole pivoté » — le cap est arrondi au pas de
   /// [rotationStep] pour ne fabriquer qu'un nombre fini d'images.
@@ -361,17 +572,24 @@ class UnitIcons {
     return data!.buffer.asUint8List();
   }
 
-  /// PNG du symbole avec l'heure de pose peinte À L'INTÉRIEUR de l'image,
-  /// dans la couleur du camp. Écrire l'heure dans l'image plutôt que via une
-  /// couche de texte évite de dépendre d'un serveur de polices (`glyphs`) :
-  /// le libellé reste lisible hors ligne (§2.3).
+  /// PNG du symbole entouré de ses champs OTAN, peints À L'INTÉRIEUR de
+  /// l'image.
   ///
-  /// Le symbole est centré dans la toile (marge gauche = largeur du texte),
-  /// pour qu'il reste exactement sur le point malgré le texte à droite.
-  static Future<Uint8List> stampedPng(
+  /// Deux règles gouvernent ce rendu :
+  ///
+  /// 1. Les textes sont peints dans l'image, jamais posés par une couche de
+  ///    texte : MapLibre irait alors chercher des polices sur un serveur
+  ///    (`glyphs`) et les libellés disparaîtraient hors ligne (§2.3).
+  /// 2. Chaque champ va où la norme APP-6 le met — groupe date-heure et
+  ///    désignation à gauche, information complémentaire et formation
+  ///    supérieure à droite, échelon au-dessus, « ENY » en bas à droite.
+  ///    La position porte le sens autant que le texte.
+  ///
+  /// Le symbole reste au CENTRE de la toile : les marges compensent les
+  /// colonnes de texte, sans quoi il glisserait à côté de sa position.
+  static Future<Uint8List> fieldedPng(
     Uint8List src,
-    String time,
-    Color color, {
+    SymbolFields fields, {
     double fontSize = 96,
   }) async {
     final codec = await ui.instantiateImageCodec(src);
@@ -386,53 +604,171 @@ class UnitIcons {
     final symbolWidth = image.width * scale;
     final symbolHeight = image.height * scale;
 
-    final painter = TextPainter(
-      textDirection: TextDirection.ltr,
-      text: TextSpan(
-        text: time,
-        style: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w700,
-          color: color,
+    TextPainter? colonne(List<(String, TextStyle)> lignes, TextAlign align) {
+      if (lignes.isEmpty) return null;
+      return TextPainter(
+        textDirection: TextDirection.ltr,
+        textAlign: align,
+        text: TextSpan(
+          children: [
+            for (final (i, (texte, style)) in lignes.indexed)
+              TextSpan(text: i == 0 ? texte : '\n$texte', style: style),
+          ],
+        ),
+      )..layout();
+    }
+
+    TextStyle style(double taille, Color couleur, FontWeight graisse) =>
+        TextStyle(
+          fontSize: taille,
+          fontWeight: graisse,
+          color: couleur,
           shadows: const [
             Shadow(color: Color(0xFF000000), blurRadius: 14),
             Shadow(color: Color(0xFF000000), blurRadius: 6),
           ],
-        ),
-      ),
-    )..layout();
+        );
 
-    const gap = 20.0;
-    final textWidth = painter.width;
-    final width = symbolWidth + 2 * (gap + textWidth);
-    final height =
-        symbolHeight > painter.height ? symbolHeight : painter.height;
+    // Colonne de gauche : W (groupe date-heure) puis T (désignation).
+    final gauche = colonne([
+      if (SymbolFields._net(fields.dtg) != null)
+        (
+          SymbolFields._net(fields.dtg)!,
+          style(fontSize, fields.dtgColor ?? Colors.white, FontWeight.w700),
+        ),
+      if (SymbolFields._net(fields.designation) != null)
+        (
+          SymbolFields._net(fields.designation)!,
+          style(fontSize * 0.95, Colors.white, FontWeight.w700),
+        ),
+    ], TextAlign.right);
+
+    // Colonne de droite : H (information libre), M (formation supérieure),
+    // N (« ENY »).
+    final droite = colonne([
+      if (SymbolFields._net(fields.info) != null)
+        (
+          SymbolFields._net(fields.info)!,
+          style(fontSize * 0.9, const Color(0xFFFFE082), FontWeight.w600),
+        ),
+      if (SymbolFields._net(fields.higherFormation) != null)
+        (
+          SymbolFields._net(fields.higherFormation)!,
+          style(fontSize * 0.8, const Color(0xFFE0E0E0), FontWeight.w500),
+        ),
+      if (fields.hostile)
+        (
+          'ENY',
+          style(fontSize * 0.8, const Color(0xFFFF5252), FontWeight.w800),
+        ),
+    ], TextAlign.left);
+
+    const gap = 24.0;
+    // Champ B — l'échelon, en formes pleines : points pour les petites
+    // unités, barre pour la compagnie. Noires cernées de blanc, elles se
+    // lisent aussi bien sur une forêt claire que sur une route sombre.
+    const marque = 30.0;
+    const ecart = 18.0;
+    final echelon = fields.echelon;
+    final largeurMarque = switch (echelon?.mark) {
+      EchelonMark.equipe => marque * 1.35,
+      EchelonMark.point => marque,
+      EchelonMark.barre => marque * 0.42,
+      EchelonMark.croix => marque * 0.95,
+      null => 0.0,
+    };
+    final largeurEchelon = echelon == null
+        ? 0.0
+        : echelon.count * largeurMarque + (echelon.count - 1) * ecart;
+    final hauteurEchelon = echelon == null ? 0.0 : marque * 1.6;
+    // Marge symétrique : la plus large des deux colonnes fixe les deux
+    // côtés, pour que le symbole reste sur le point.
+    final cote = math.max(gauche?.width ?? 0, droite?.width ?? 0);
+    final marge = cote == 0 ? 0.0 : gap + cote;
+    // Même raisonnement en hauteur pour l'échelon au-dessus.
+    final coiffe = echelon == null ? 0.0 : hauteurEchelon + gap * 0.3;
+
+    final width = symbolWidth + 2 * marge;
+    final height = math.max(
+          symbolHeight,
+          math.max(gauche?.height ?? 0, droite?.height ?? 0),
+        ) +
+        2 * coiffe;
 
     final recorder = ui.PictureRecorder();
     final canvas = ui.Canvas(recorder);
+    final symbolLeft = marge;
+    final symbolTop = (height - symbolHeight) / 2;
     canvas.drawImageRect(
       image,
-      ui.Rect.fromLTWH(
-        0,
-        0,
-        image.width.toDouble(),
-        image.height.toDouble(),
-      ),
-      ui.Rect.fromLTWH(
-        gap + textWidth,
-        (height - symbolHeight) / 2,
-        symbolWidth,
-        symbolHeight,
-      ),
+      ui.Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      ui.Rect.fromLTWH(symbolLeft, symbolTop, symbolWidth, symbolHeight),
       ui.Paint()..filterQuality = ui.FilterQuality.medium,
     );
-    painter.paint(
+    gauche?.paint(
+      canvas,
+      Offset(symbolLeft - gap - gauche.width, (height - gauche.height) / 2),
+    );
+    droite?.paint(
       canvas,
       Offset(
-        gap + textWidth + symbolWidth + gap,
-        (height - painter.height) / 2,
+        symbolLeft + symbolWidth + gap,
+        (height - droite.height) / 2,
       ),
     );
+    if (echelon != null) {
+      // Noir cerné de blanc : la marque se lit aussi bien sur une forêt
+      // claire que sur une route sombre.
+      final plein = ui.Paint()..color = const ui.Color(0xFF000000);
+      final trait = ui.Paint()
+        ..color = const ui.Color(0xFF000000)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 7
+        ..strokeCap = ui.StrokeCap.round;
+      final cerne = ui.Paint()
+        ..color = const ui.Color(0xFFFFFFFF)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 6;
+      final cerneEpais = ui.Paint()
+        ..color = const ui.Color(0xFFFFFFFF)
+        ..style = ui.PaintingStyle.stroke
+        ..strokeWidth = 15
+        ..strokeCap = ui.StrokeCap.round;
+
+      final haut = symbolTop - coiffe;
+      final centreY = haut + hauteurEchelon / 2;
+      var x = symbolLeft + (symbolWidth - largeurEchelon) / 2;
+      for (var i = 0; i < echelon.count; i++) {
+        final boite = ui.Rect.fromLTWH(
+          x,
+          centreY - hauteurEchelon / 2,
+          largeurMarque,
+          hauteurEchelon,
+        );
+        switch (echelon.mark) {
+          case EchelonMark.equipe:
+            // « Ø » : l'ovale de l'équipe, barré en diagonale.
+            canvas.drawOval(boite, cerneEpais);
+            canvas.drawOval(boite, trait);
+            canvas.drawLine(boite.bottomLeft, boite.topRight, cerneEpais);
+            canvas.drawLine(boite.bottomLeft, boite.topRight, trait);
+          case EchelonMark.point:
+            final centre = boite.center;
+            canvas.drawCircle(centre, largeurMarque / 2, plein);
+            canvas.drawCircle(centre, largeurMarque / 2, cerne);
+          case EchelonMark.barre:
+            canvas.drawRect(boite, plein);
+            canvas.drawRect(boite, cerne);
+          case EchelonMark.croix:
+            canvas.drawLine(boite.topLeft, boite.bottomRight, cerneEpais);
+            canvas.drawLine(boite.bottomLeft, boite.topRight, cerneEpais);
+            canvas.drawLine(boite.topLeft, boite.bottomRight, trait);
+            canvas.drawLine(boite.bottomLeft, boite.topRight, trait);
+        }
+        x += largeurMarque + ecart;
+      }
+    }
+
     final rendered =
         await recorder.endRecording().toImage(width.round(), height.round());
     final data = await rendered.toByteData(format: ui.ImageByteFormat.png);

@@ -27,6 +27,7 @@ import 'elevation.dart';
 import 'grid_ref.dart';
 import 'hud.dart';
 import 'map_styles.dart';
+import 'squad_grouping.dart';
 import 'unit_icons.dart';
 import 'unit_picker_sheet.dart';
 
@@ -75,6 +76,10 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Noms des équipes et escouades, pour grouper et étiqueter les alliés.
   Map<String, String> _unitNames = const {};
+
+  /// Étiquettes libres des escouades (fréquence radio du réseau), par
+  /// identifiant d'escouade — peintes à côté du marqueur de groupe.
+  Map<String, String> _squadNotes = const {};
 
   /// Drapeaux de la partie (§7.8) et scores.
   List<ObjectiveView> _objectives = const [];
@@ -130,6 +135,9 @@ class _MapScreenState extends State<MapScreen> {
   /// Motif habillant le prochain tracé (id d'icône de la famille « Dessin »),
   /// ou null pour un trait uni.
   String? _drawPattern;
+
+  /// Zoom courant : décide du repli des escouades (voir [layoutAllies]).
+  double _zoom = 15;
 
   /// Avertissement navigateur, refermable pour la session.
   bool _webNoticeDismissed = false;
@@ -311,13 +319,14 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _loadPermissions() async {
     try {
       final perms = await GamesApi.myPermissions(widget.gameId!);
-      final names = await GamesApi.unitNames(widget.gameId!);
+      final org = await GamesApi.organisation(widget.gameId!);
       final flags = await GamesApi.objectives(widget.gameId!);
       final scores = await GamesApi.scores(widget.gameId!);
       if (mounted) {
         setState(() {
           _myPermissions = perms;
-          _unitNames = names;
+          _unitNames = org.names;
+          _squadNotes = org.notes;
           _objectives = flags;
           _scores = scores;
         });
@@ -822,6 +831,12 @@ class _MapScreenState extends State<MapScreen> {
     final canBadge = _can(Perm.membersBadge) && myRank < roleRank(a.role);
     final canPromote =
         _can(Perm.membersPromote) && a.role != 'commandant';
+    // Composer un groupe est borné comme le reste : la permission dit quoi,
+    // le grade dit sur qui (§5).
+    final canOrganise = _can(Perm.squadsManage) && myRank < roleRank(a.role);
+    // L'étiquette (fréquence radio, indicatif) suit la portée de l'insigne,
+    // avec une exception : la sienne, on l'écrit toujours soi-même.
+    final canLabel = a.membershipId == _myMembershipId || canBadge;
     return ListTile(
       dense: true,
       leading: Image.asset(
@@ -860,7 +875,7 @@ class _MapScreenState extends State<MapScreen> {
                 );
               },
             ),
-          if (canBadge || canPromote)
+          if (canBadge || canPromote || canOrganise || canLabel)
             PopupMenuButton<String>(
               tooltip: 'Commandement',
               icon: const Icon(Icons.military_tech),
@@ -871,6 +886,36 @@ class _MapScreenState extends State<MapScreen> {
                     value: 'badge',
                     child: Text('Changer l’insigne'),
                   ),
+                if (canLabel)
+                  PopupMenuItem(
+                    value: 'note',
+                    child: Text(
+                      (a.note?.trim() ?? '').isEmpty
+                          ? 'Ajouter une étiquette'
+                          : 'Modifier l’étiquette',
+                    ),
+                  ),
+                if (canOrganise) ...[
+                  const PopupMenuItem(
+                    value: 'squad',
+                    child: Text('Affecter a une escouade'),
+                  ),
+                  if (a.squadId != null)
+                    const PopupMenuItem(
+                      value: 'squad:none',
+                      child: Text('Retirer de son escouade'),
+                    ),
+                  if (a.reportsToMembershipId != _myMembershipId)
+                    const PopupMenuItem(
+                      value: 'reports:me',
+                      child: Text('Prendre sous mes ordres'),
+                    )
+                  else
+                    const PopupMenuItem(
+                      value: 'reports:none',
+                      child: Text('Ne plus l’avoir sous mes ordres'),
+                    ),
+                ],
                 if (canPromote) ...[
                   if (a.role != 'capitaine')
                     const PopupMenuItem(
@@ -909,6 +954,22 @@ class _MapScreenState extends State<MapScreen> {
           unitType: unitType.slug,
         );
         _showSnack('Insigne de ${target.displayName} : ${unitType.label}');
+      } else if (action == 'note') {
+        final note = await _askNote(
+          'Étiquette de ${target.displayName}',
+          target.note,
+        );
+        if (note == null) return;
+        await GamesApi.updateMember(
+          widget.gameId!,
+          target.membershipId,
+          note: note.trim(),
+        );
+        _showSnack(
+          note.trim().isEmpty
+              ? 'Étiquette de ${target.displayName} effacée'
+              : '${target.displayName} : ${note.trim()}',
+        );
       } else if (action.startsWith('role:')) {
         final role = action.substring('role:'.length);
         await GamesApi.updateMember(
@@ -917,11 +978,257 @@ class _MapScreenState extends State<MapScreen> {
           role: role,
         );
         _showSnack('${target.displayName} : ${roleLabel(role)}');
+      } else if (action == 'squad') {
+        await _assignToSquad(target);
+      } else if (action == 'squad:none') {
+        await GamesApi.assignMember(
+          widget.gameId!,
+          target.membershipId,
+          squadId: null,
+        );
+        await _reloadOrganisation();
+        _showSnack('${target.displayName} n’est plus en escouade');
+      } else if (action == 'reports:me') {
+        await GamesApi.assignMember(
+          widget.gameId!,
+          target.membershipId,
+          reportsToMembershipId: _myMembershipId,
+        );
+        await _reloadOrganisation();
+        _showSnack('${target.displayName} est sous vos ordres');
+      } else if (action == 'reports:none') {
+        await GamesApi.assignMember(
+          widget.gameId!,
+          target.membershipId,
+          reportsToMembershipId: null,
+        );
+        await _reloadOrganisation();
+        _showSnack('${target.displayName} n’est plus sous vos ordres');
       }
     } catch (e) {
       _showSnack(e.toString(), isError: true);
     }
   }
+
+  /// Contenu d'une escouade repliée : qui la compose, et de quoi agir.
+  void _showSquadSheet(SquadCluster cluster) {
+    final hommes = [
+      for (final id in cluster.members)
+        if (_members[id] != null) _members[id]!,
+    ]..sort((a, b) => roleRank(a.role) - roleRank(b.role));
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.groups, size: 32),
+              title: Text(cluster.name),
+              subtitle: Text(
+                // L'échelon d'abord : c'est ce que dit la marque au-dessus
+                // du cadre sur la carte.
+                '${SymbolEchelon.forHeadcount(hommes.length)?.label ?? 'Groupe'}'
+                ' · ${hommes.length} hommes · '
+                '${hommes.where((m) => m.isConnected).length} en ligne'
+                '${(cluster.note ?? '').isEmpty ? '' : ' · ${cluster.note}'}',
+              ),
+              trailing: IconButton(
+                tooltip: 'Diriger vers le groupe',
+                icon: const Icon(Icons.navigation_outlined),
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  _guideTo(cluster.name, cluster.lat, cluster.lng);
+                },
+              ),
+            ),
+            // Étiquette du réseau : elle appartient au groupe, pas à ses
+            // hommes — le marqueur d'escouade la porte pour tous.
+            if (_can(Perm.squadsManage))
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.sell_outlined),
+                title: Text(
+                  (cluster.note ?? '').isEmpty
+                      ? 'Ajouter une étiquette au groupe'
+                      : 'Étiquette : ${cluster.note}',
+                ),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _changeSquadNote(cluster);
+                },
+              ),
+            const Divider(height: 8),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [for (final m in hommes) _allyTile(m)],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Pose ou efface l'étiquette d'une escouade (fréquence radio du réseau).
+  Future<void> _changeSquadNote(SquadCluster cluster) async {
+    final note = await _askNote('Étiquette de ${cluster.name}', cluster.note);
+    if (note == null) return;
+    try {
+      await GamesApi.updateSquad(
+        widget.gameId!,
+        cluster.squadId,
+        note: note.trim(),
+      );
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack(
+        note.trim().isEmpty
+            ? 'Étiquette de ${cluster.name} effacée'
+            : '${cluster.name} : ${note.trim()}',
+      );
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
+  }
+
+  /// Affecte un homme à une escouade de son camp, ou en forme une nouvelle
+  /// dans la foulée — c'est le geste courant sur le terrain : on crée le
+  /// groupe au moment où on y met quelqu'un.
+  Future<void> _assignToSquad(MemberView target) async {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    // Le camp de la cible fait foi ; à défaut, le mien.
+    final teamId = target.teamId ?? me?.teamId;
+    if (teamId == null) {
+      _showSnack('Affectez-le d’abord à un camp', isError: true);
+      return;
+    }
+
+    final squads = await GamesApi.squadsOfTeam(widget.gameId!, teamId);
+    if (!mounted) return;
+
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('Escouade de ${target.displayName}'),
+              subtitle: Text('Camp ${_unitNames[teamId] ?? ''}'),
+            ),
+            const Divider(height: 8),
+            if (squads.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text('Aucune escouade dans ce camp pour l’instant.'),
+              ),
+            for (final sq in squads)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  sq.id == target.squadId
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(sq.name),
+                onTap: () => Navigator.pop(sheetContext, sq.id),
+              ),
+            const Divider(height: 8),
+            ListTile(
+              leading: const Icon(Icons.group_add),
+              title: const Text('Former une nouvelle escouade'),
+              onTap: () => Navigator.pop(sheetContext, 'new'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choix == null || !mounted) return;
+
+    var squadId = choix;
+    if (choix == 'new') {
+      final nom = await _askText('Nom de l’escouade', 'Alpha');
+      if (nom == null || nom.trim().isEmpty) return;
+      final squad =
+          await GamesApi.createSquad(widget.gameId!, teamId, nom.trim());
+      squadId = squad.id;
+    }
+
+    await GamesApi.assignMember(
+      widget.gameId!,
+      target.membershipId,
+      squadId: squadId,
+    );
+    await _reloadOrganisation();
+    if (!mounted) return;
+    _showSnack('${target.displayName} → ${_unitNames[squadId] ?? 'escouade'}');
+  }
+
+  /// Recharge les noms d'équipes et d'escouades après une modification :
+  /// c'est ce qui alimente les libellés et les marqueurs de groupe.
+  Future<void> _reloadOrganisation() async {
+    try {
+      final org = await GamesApi.organisation(widget.gameId!);
+      if (!mounted) return;
+      setState(() {
+        _unitNames = org.names;
+        _squadNotes = org.notes;
+      });
+      await _refreshMarkers();
+    } catch (_) {
+      // Hors ligne : les libellés déjà connus restent affichés.
+    }
+  }
+
+  Future<String?> _askText(
+    String title,
+    String hint, {
+    String? initial,
+    String confirm = 'Créer',
+    String? helper,
+    int? maxLength,
+  }) {
+    final controller = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: maxLength,
+          decoration: InputDecoration(hintText: hint, helperText: helper),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: Text(confirm),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Saisie d'une étiquette : le texte peint à côté d'une icône. Volontairement
+  /// court — au-delà d'une poignée de caractères il mange la carte au lieu de
+  /// l'informer. Vider le champ efface l'étiquette.
+  Future<String?> _askNote(String title, String? initial) => _askText(
+        title,
+        '446.00625',
+        initial: initial,
+        confirm: 'Appliquer',
+        helper: 'Fréquence radio, indicatif… vide pour effacer',
+        maxLength: 24,
+      );
 
   /// Grille des insignes alliés, pour attribuer celui d'un joueur.
   Future<UnitType?> _pickUnitType() {
@@ -1141,19 +1448,74 @@ class _MapScreenState extends State<MapScreen> {
         '${local.minute.toString().padLeft(2, '0')}';
   }
 
-  /// Image d'un marqueur : le symbole ET l'heure de pose, dans la couleur du
-  /// camp (rouge hostile, bleu allié, vert neutre, jaune inconnu).
-  String _markerImageId(MapObjectView o) => UnitIcons.stampId(
+  /// Champs OTAN d'un marqueur posé : l'heure de pose en groupe date-heure
+  /// (champ W, dans la couleur du camp), l'étiquette libre en information
+  /// complémentaire (champ H), et « ENY » sur les symboles hostiles
+  /// (champ N).
+  SymbolFields _markerFields(MapObjectView o) {
+    final icon = o.icon ?? 'infantry_unknown';
+    final camp = UnitIcons.affiliationOf(icon);
+    return SymbolFields(
+      dtg: _timeLabel(o.createdAt),
+      dtgColor: camp?.color ?? Colors.white,
+      info: _markerNote(o),
+      hostile: camp == UnitAffiliation.hostile,
+    );
+  }
+
+  String _markerImageId(MapObjectView o) => UnitIcons.fieldedId(
         o.icon ?? 'infantry_unknown',
-        _timeLabel(o.createdAt),
+        _markerFields(o),
+      );
+
+  /// Étiquette libre posée sur un marqueur (fréquence radio, immatriculation
+  /// d'un véhicule). Vide quand il n'y en a pas.
+  static String _markerNote(MapObjectView o) =>
+      ((o.properties['note'] as String?) ?? '').trim();
+
+  /// Champs OTAN d'un allié : son étiquette en information complémentaire
+  /// (champ H) et son escouade en formation supérieure (champ M).
+  ///
+  /// Les deux se complètent avec le repli des escouades : dézoomé, on voit
+  /// le groupe ; zoomé, chaque homme dit de quel groupe il relève.
+  SymbolFields _allyFields(MemberView m) => SymbolFields(
+        info: m.note,
+        higherFormation: m.squadId == null ? null : _unitNames[m.squadId],
+      );
+
+  /// Insigne d'un allié : sa variante à contour blanc, entourée de ses
+  /// champs quand il en porte.
+  String _allyIconId(MemberView m) => UnitIcons.fieldedId(
+        '${m.unitType}_allied_outline',
+        _allyFields(m),
       );
 
   /// Mon insigne, à contour blanc épais — remplace le point bleu en partie.
   String? get _selfIcon {
     final me = _myMembershipId != null ? _members[_myMembershipId] : null;
     if (!_inGame || me == null) return null;
-    return '${me.unitType}_allied_self';
+    return UnitIcons.fieldedId('${me.unitType}_allied_self', _allyFields(me));
   }
+
+  /// Champs OTAN d'un marqueur d'escouade : son nom en désignation propre
+  /// (champ T, à gauche), son étiquette en information complémentaire
+  /// (champ H, à droite) et son échelon au-dessus du cadre (champ B).
+  SymbolFields _squadFields(SquadCluster g) => SymbolFields(
+        designation: g.name,
+        info: g.note,
+        echelon: SymbolEchelon.forHeadcount(g.members.length),
+      );
+
+  /// Répartition des alliés au zoom courant : insignes individuels d'un
+  /// côté, escouades repliées de l'autre. La règle est dans
+  /// [layoutAllies], vérifiable sans carte.
+  AlliesLayout get _alliesLayout => layoutAllies(
+        members: _members.values,
+        myMembershipId: _myMembershipId,
+        zoom: _zoom,
+        unitNames: _unitNames,
+        squadNotes: _squadNotes,
+      );
 
   /// Icône d'un contact révélé : son VRAI insigne, en rouge hostile.
   String _contactIcon(RevealedContact c) =>
@@ -1161,8 +1523,16 @@ class _MapScreenState extends State<MapScreen> {
           ? '${c.unitType}_hostile'
           : 'infantry_hostile';
 
+  /// Un contact révélé est hostile par définition : heure du survol en
+  /// champ W, « ENY » en champ N.
+  SymbolFields _contactFields() => SymbolFields(
+        dtg: _timeLabel(_contactsAt),
+        dtgColor: UnitAffiliation.hostile.color,
+        hostile: true,
+      );
+
   String _contactImageId(RevealedContact c) =>
-      UnitIcons.stampId(_contactIcon(c), _timeLabel(_contactsAt));
+      UnitIcons.fieldedId(_contactIcon(c), _contactFields());
 
   /// Tous les symboles ponctuels de la carte partagent cette couche :
   /// marqueurs posés, alliés, mon propre insigne, contacts révélés par un
@@ -1203,23 +1573,38 @@ class _MapScreenState extends State<MapScreen> {
               },
             },
           // Alliés : insigne d'unité à contour blanc, estompé hors ligne
-          // (§2.4 — on garde la dernière position connue).
-          for (final m in _members.values)
-            if (m.membershipId != _myMembershipId &&
-                m.lat != null &&
-                m.lng != null)
-              {
-                'type': 'Feature',
-                'id': m.membershipId,
-                'geometry': {
-                  'type': 'Point',
-                  'coordinates': [m.lng, m.lat],
-                },
-                'properties': {
-                  'icon': '${m.unitType}_allied_outline',
-                  'opacity': m.isConnected ? 1.0 : 0.35,
-                },
+          // (§2.4 — on garde la dernière position connue). Trop dézoomé,
+          // une escouade parle d'une seule voix.
+          for (final m in _alliesLayout.individuals)
+            {
+              'type': 'Feature',
+              'id': m.membershipId,
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [m.lng, m.lat],
               },
+              'properties': {
+                'icon': _allyIconId(m),
+                'opacity': m.isConnected ? 1.0 : 0.35,
+              },
+            },
+          for (final g in _alliesLayout.squads)
+            {
+              'type': 'Feature',
+              'id': 'squad:${g.squadId}',
+              'geometry': {
+                'type': 'Point',
+                'coordinates': [g.lng, g.lat],
+              },
+              'properties': {
+                'icon': UnitIcons.squadId(
+                  g.squadId,
+                  g.members.length,
+                  _squadFields(g),
+                ),
+                'opacity': g.anyConnected ? 1.0 : 0.35,
+              },
+            },
           // Moi : mon insigne, contour blanc épais.
           if (_selfIcon != null && _lastPosition != null)
             {
@@ -1301,15 +1686,15 @@ class _MapScreenState extends State<MapScreen> {
     final controller = _controller;
     if (controller == null) return;
     // Instantané : les listes peuvent changer pendant les `await` ci-dessous.
-    final stamps = <(String id, String icon, String time)>[
+    // Instantané : les listes peuvent changer pendant les `await` ci-dessous.
+    final composes = <(String id, String icon, SymbolFields fields)>[
       for (final o in _objects.values)
         if (o.kind == 'marker')
-          (_markerImageId(o), o.icon ?? 'infantry_unknown',
-              _timeLabel(o.createdAt)),
+          (_markerImageId(o), o.icon ?? 'infantry_unknown', _markerFields(o)),
       for (final c in _contacts)
-        (_contactImageId(c), _contactIcon(c), _timeLabel(_contactsAt)),
+        (_contactImageId(c), _contactIcon(c), _contactFields()),
     ];
-    for (final (id, icon, time) in stamps) {
+    for (final (id, icon, fields) in composes) {
       if (!_stampedIcons.add(id)) continue;
       if (!UnitIcons.isKnown(icon)) {
         _stampedIcons.remove(id);
@@ -1318,19 +1703,70 @@ class _MapScreenState extends State<MapScreen> {
       final base = await rootBundle.load(UnitIcons.assetKey(icon));
       await controller.addImage(
         id,
-        await UnitIcons.stampedPng(
-          base.buffer.asUint8List(),
-          time,
-          UnitIcons.affiliationOf(icon)?.color ?? Colors.white,
+        await UnitIcons.fieldedPng(base.buffer.asUint8List(), fields),
+      );
+    }
+
+    // Marqueurs d'escouade : le cadre et son effectif, puis les champs
+    // (nom, échelon, étiquette) autour. Une image par combinaison.
+    for (final g in _alliesLayout.squads) {
+      final id = UnitIcons.squadId(g.squadId, g.members.length, _squadFields(g));
+      if (!_stampedIcons.add(id)) continue;
+      await controller.addImage(
+        id,
+        await UnitIcons.fieldedPng(
+          await UnitIcons.squadFramePng(g.members.length),
+          _squadFields(g),
         ),
       );
     }
-    // Insignes des alliés et le mien : variantes à contour blanc.
+
+    // Insignes des alliés et le mien : variantes à contour blanc. Ceux qui
+    // portent des champs sont composés juste après — `_ensureIcons` ne sait
+    // fabriquer que les symboles nus.
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
     await _ensureIcons([
       for (final m in _members.values)
-        if (m.membershipId != _myMembershipId) '${m.unitType}_allied_outline',
-      ?_selfIcon,
+        if (m.membershipId != _myMembershipId && _allyFields(m).isEmpty)
+          '${m.unitType}_allied_outline',
+      if (me != null && _allyFields(me).isEmpty) ?_selfIcon,
     ]);
+
+    // Alliés porteurs de champs : le contour blanc d'abord, les champs
+    // autour ensuite. Une image par couple insigne + champs.
+    final entoures = <(String id, String base, double border, SymbolFields f)>[
+      for (final m in _members.values)
+        if (!_allyFields(m).isEmpty)
+          (
+            m.membershipId == _myMembershipId
+                ? UnitIcons.fieldedId(
+                    '${m.unitType}_allied_self',
+                    _allyFields(m),
+                  )
+                : _allyIconId(m),
+            '${m.unitType}_allied',
+            m.membershipId == _myMembershipId ? 22.0 : 8.0,
+            _allyFields(m),
+          ),
+    ];
+    for (final (id, base, border, fields) in entoures) {
+      if (!_stampedIcons.add(id)) continue;
+      try {
+        final png =
+            (await rootBundle.load(UnitIcons.assetKey(base))).buffer
+                .asUint8List();
+        await controller.addImage(
+          id,
+          await UnitIcons.fieldedPng(
+            await UnitIcons.outlinedPng(base, png, border: border),
+            fields,
+          ),
+        );
+      } catch (e) {
+        _stampedIcons.remove(id);
+        debugPrint('champs indisponibles : $id ($e)');
+      }
+    }
 
     // Le drone : une image par pas de cap, fabriquée une seule fois.
     for (final d in [..._drones]) {
@@ -1529,6 +1965,19 @@ class _MapScreenState extends State<MapScreen> {
     // Les sommets d'un côté, le trait qui les relie de l'autre.
     controller.setGeoJsonSource(_draftSource, _draftGeoJson());
     controller.setGeoJsonSource(_drawingsSource, _drawingsGeoJson());
+  }
+
+  /// Franchir le seuil de regroupement est le seul changement de caméra qui
+  /// nous intéresse.
+  void _onCameraIdle() {
+    final zoom = _controller?.cameraPosition?.zoom;
+    if (zoom == null || !mounted) return;
+    final avant = _zoom >= kSquadGroupingZoom;
+    final apres = zoom >= kSquadGroupingZoom;
+    _zoom = zoom;
+    if (avant == apres) return;
+    setState(() {});
+    _refreshMarkers();
   }
 
   void _onMapClick(Point<double> point, LatLng latLng) {
@@ -1745,6 +2194,17 @@ class _MapScreenState extends State<MapScreen> {
     // Un déplacement en cours : le tap sert à reposer, pas à ouvrir la fiche.
     if (_moving != null) return;
     if (layerId != _markersLayer && !layerId.startsWith('drawings-')) return;
+
+    // Un groupe replié doit pouvoir se déplier : sans cela, dézoomer
+    // ferait perdre l'accès à ses hommes.
+    if (id.startsWith('squad:')) {
+      final squadId = id.substring('squad:'.length);
+      final cluster =
+          _alliesLayout.squads.where((g) => g.squadId == squadId).firstOrNull;
+      if (cluster != null) _showSquadSheet(cluster);
+      return;
+    }
+
     // La couche des marqueurs porte aussi les alliés : toucher un allié
     // ouvre la visée vers lui.
     final ally = _members[id];
@@ -1766,6 +2226,7 @@ class _MapScreenState extends State<MapScreen> {
     final author = _members[object.authorMembershipId];
     final icon = object.icon;
     final affiliation = icon != null ? UnitIcons.affiliationOf(icon) : null;
+    final note = _markerNote(object);
 
     showModalBottomSheet<void>(
       context: context,
@@ -1799,7 +2260,8 @@ class _MapScreenState extends State<MapScreen> {
                 ),
                 subtitle: Text(
                   'posé par ${author?.displayName ?? 'un allié'} '
-                  'à ${_timeLabel(object.createdAt)}',
+                  'à ${_timeLabel(object.createdAt)}'
+                  '${note.isEmpty ? '' : ' · $note'}',
                 ),
               ),
 
@@ -1883,6 +2345,19 @@ class _MapScreenState extends State<MapScreen> {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // Étiquette libre peinte à côté du symbole : fréquence radio
+                // d'un véhicule, immatriculation, consigne courte.
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.sell_outlined),
+                  label: Text(
+                    note.isEmpty ? 'Ajouter une étiquette' : 'Étiquette : $note',
+                  ),
+                  onPressed: () {
+                    Navigator.pop(sheetContext);
+                    _changeNote(object);
+                  },
+                ),
+                const SizedBox(height: 8),
                 OutlinedButton.icon(
                   icon: const Icon(Icons.delete_outline),
                   label: const Text('Supprimer'),
@@ -1917,6 +2392,24 @@ class _MapScreenState extends State<MapScreen> {
       }),
     );
     _showSnack('Passé en ${affiliation.label.toLowerCase()}');
+  }
+
+  /// Pose ou efface l'étiquette d'un objet. Comme le reste de la fiche,
+  /// elle passe par la file offline : elle marche sans réseau (§2.3).
+  Future<void> _changeNote(MapObjectView object) async {
+    final note = await _askNote('Étiquette du marqueur', _markerNote(object));
+    if (note == null) return;
+    final texte = note.trim();
+    final proprietes = {...object.properties};
+    // Vider le champ efface : sur le terrain on retire une fréquence en
+    // effaçant le texte, pas en cherchant un bouton « supprimer ».
+    if (texte.isEmpty) {
+      proprietes.remove('note');
+    } else {
+      proprietes['note'] = texte;
+    }
+    _saveObject(_copyObject(object, properties: proprietes));
+    _showSnack(texte.isEmpty ? 'Étiquette effacée' : 'Étiquette : $texte');
   }
 
   /// Remplace le symbole par un autre, choisi dans le sélecteur complet.
@@ -2198,6 +2691,9 @@ class _MapScreenState extends State<MapScreen> {
               onStyleLoadedCallback: _onStyleLoaded,
               onMapLongClick: _onMapLongClick,
               onMapClick: _onMapClick,
+              // On ne reconstruit les marqueurs que lorsque la DÉCISION
+              // change, pas à chaque mouvement de caméra.
+              onCameraIdle: _onCameraIdle,
             ),
           // Bandeau d'état, collé en haut : batterie, cap, heure,
           // coordonnées, réseau.

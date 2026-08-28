@@ -56,20 +56,25 @@ class GamesApi {
     _ensureOk(res);
   }
 
-  /// Nomination (commandant) ou changement d'insigne (gradés) — validé serveur.
+  /// Nomination (commandant), changement d'insigne ou pose d'étiquette
+  /// (fréquence radio) — validé serveur. [note] absent ne touche à rien ;
+  /// une chaîne vide efface l'étiquette.
   static Future<void> updateMember(
     String gameId,
     String membershipId, {
     String? role,
     String? unitType,
+    Object? note = _absent,
   }) async {
+    final body = <String, dynamic>{
+      'role': ?role,
+      'unitType': ?unitType,
+    };
+    if (!identical(note, _absent)) body['note'] = note;
     final res = await http.patch(
       _uri('/games/$gameId/members/$membershipId'),
       headers: _headers(),
-      body: jsonEncode({
-        'role': ?role,
-        'unitType': ?unitType,
-      }),
+      body: jsonEncode(body),
     );
     _ensureOk(res);
   }
@@ -109,24 +114,131 @@ class GamesApi {
     );
   }
 
+  /// Escouades du camp d'un joueur, pour l'affecter en partie.
+  static Future<List<SquadSummary>> squadsOfTeam(
+    String gameId,
+    String? teamId,
+  ) async {
+    final res = await http.get(
+      _uri('/games/$gameId/teams'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    final out = <SquadSummary>[];
+    for (final t in (jsonDecode(res.body) as List<dynamic>)) {
+      final team = t as Map<String, dynamic>;
+      if (teamId != null && team['id'] != teamId) continue;
+      for (final sq in (team['squads'] as List<dynamic>)) {
+        final squad = sq as Map<String, dynamic>;
+        out.add(SquadSummary(
+          id: squad['id'] as String,
+          name: squad['name'] as String,
+          teamId: team['id'] as String,
+          leaderMembershipId: squad['leaderMembershipId'] as String?,
+          reportsToMembershipId: squad['reportsToMembershipId'] as String?,
+          note: squad['note'] as String?,
+        ));
+      }
+    }
+    return out;
+  }
+
+  /// Forme une escouade dans un camp (permission `squads:manage`).
+  static Future<SquadSummary> createSquad(
+    String gameId,
+    String teamId,
+    String name,
+  ) async {
+    final res = await http.post(
+      _uri('/games/$gameId/squads'),
+      headers: _headers(),
+      body: jsonEncode({'teamId': teamId, 'name': name}),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return SquadSummary(
+      id: body['id'] as String,
+      name: body['name'] as String,
+      teamId: body['teamId'] as String,
+      leaderMembershipId: body['leaderMembershipId'] as String?,
+      reportsToMembershipId: body['reportsToMembershipId'] as String?,
+      note: body['note'] as String?,
+    );
+  }
+
+  /// Modifie une escouade : son nom, ou l'étiquette affichée à côté de son
+  /// marqueur (fréquence radio du réseau). Un champ absent n'est pas touché.
+  static Future<void> updateSquad(
+    String gameId,
+    String squadId, {
+    String? name,
+    Object? note = _absent,
+  }) async {
+    final body = <String, dynamic>{'name': ?name};
+    if (!identical(note, _absent)) body['note'] = note;
+    final res = await http.patch(
+      _uri('/games/$gameId/squads/$squadId'),
+      headers: _headers(),
+      body: jsonEncode(body),
+    );
+    _ensureOk(res);
+  }
+
+  /// Affecte un membre : camp, escouade, supérieur direct. Un champ absent
+  /// n'est pas touché ; `null` retire le rattachement.
+  static Future<void> assignMember(
+    String gameId,
+    String membershipId, {
+    Object? teamId = _absent,
+    Object? squadId = _absent,
+    Object? reportsToMembershipId = _absent,
+  }) async {
+    final body = <String, dynamic>{};
+    if (!identical(teamId, _absent)) body['teamId'] = teamId;
+    if (!identical(squadId, _absent)) body['squadId'] = squadId;
+    if (!identical(reportsToMembershipId, _absent)) {
+      body['reportsToMembershipId'] = reportsToMembershipId;
+    }
+    final res = await http.patch(
+      _uri('/games/$gameId/members/$membershipId/assignment'),
+      headers: _headers(),
+      body: jsonEncode(body),
+    );
+    _ensureOk(res);
+  }
+
+  /// Sentinelle « champ non fourni » — distincte de `null`, qui veut dire
+  /// « retirer le rattachement ».
+  static const _absent = Object();
+
   /// Organisation de la partie : équipes et escouades (§4). Sert à grouper
   /// les alliés et à nommer les rattachements.
-  static Future<Map<String, String>> unitNames(String gameId) async {
+  static Future<Map<String, String>> unitNames(String gameId) async =>
+      (await organisation(gameId)).names;
+
+  /// Noms des unités ET étiquettes des escouades, en un seul appel : les
+  /// deux viennent de la même réponse, les demander séparément doublerait
+  /// le trafic pour rien.
+  static Future<({Map<String, String> names, Map<String, String> notes})>
+      organisation(String gameId) async {
     final res = await http.get(
       _uri('/games/$gameId/teams'),
       headers: _headers(),
     );
     _ensureOk(res);
     final names = <String, String>{};
+    final notes = <String, String>{};
     for (final t in (jsonDecode(res.body) as List<dynamic>)) {
       final team = t as Map<String, dynamic>;
       names[team['id'] as String] = team['name'] as String;
       for (final s in (team['squads'] as List<dynamic>)) {
         final squad = s as Map<String, dynamic>;
         names[squad['id'] as String] = squad['name'] as String;
+        final note = (squad['note'] as String?)?.trim() ?? '';
+        if (note.isNotEmpty) notes[squad['id'] as String] = note;
       }
     }
-    return names;
+    return (names: names, notes: notes);
   }
 
   /// Mes permissions dans une partie (§5) — l'app s'y conforme pour
