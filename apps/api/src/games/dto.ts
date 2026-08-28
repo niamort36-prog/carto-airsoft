@@ -1,5 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, Length } from 'class-validator';
+import {
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  ValidateIf,
+} from 'class-validator';
 
 export const LIFE_STATUSES = [
   'alive',
@@ -52,6 +58,20 @@ export class UpdateMemberDto {
   @IsOptional()
   @IsIn(UNIT_TYPES)
   unitType?: UnitType;
+
+  @ApiPropertyOptional({
+    example: '446.00625',
+    nullable: true,
+    maxLength: 24,
+    description:
+      'Étiquette affichée à côté de l’insigne (fréquence radio, indicatif). ' +
+      'Chaîne vide ou null pour l’effacer.',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsString()
+  @Length(0, 24)
+  note?: string | null;
 }
 
 export class CreateGameDto {

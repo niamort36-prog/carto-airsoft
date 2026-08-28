@@ -34,6 +34,8 @@ export interface SquadView {
   leaderMembershipId: string | null;
   /** Capitaine ou commandant dont l'escouade dépend. */
   reportsToMembershipId: string | null;
+  /** Étiquette libre du groupe (fréquence radio du réseau, indicatif). */
+  note: string | null;
 }
 
 export interface TeamView {
@@ -69,6 +71,7 @@ export class TeamsService {
           name: s.name,
           leaderMembershipId: s.leaderMembershipId,
           reportsToMembershipId: s.reportsToMembershipId,
+          note: s.note,
         })),
     }));
   }
@@ -268,6 +271,11 @@ export class TeamsService {
       }
     }
 
+    // Étiquette du groupe : vidée, elle disparaît de la carte.
+    if (dto.note !== undefined) {
+      changes.note = dto.note?.trim() ? dto.note.trim() : null;
+    }
+
     const [updated] = await this.db
       .update(squads)
       .set(changes)
@@ -279,6 +287,7 @@ export class TeamsService {
       name: updated.name,
       leaderMembershipId: updated.leaderMembershipId,
       reportsToMembershipId: updated.reportsToMembershipId,
+      note: updated.note,
     };
   }
 
@@ -287,11 +296,17 @@ export class TeamsService {
     return role === 'commandant' || role === 'capitaine';
   }
 
-  /** « On n'agit jamais sur son propre rang, ni au-dessus » (§5). */
+  /**
+   * « On n'agit jamais sur son propre rang, ni au-dessus » (§5) — avec une
+   * exception qui va de soi : on se place soi-même. Sans elle, un
+   * commandant ne pourrait pas rejoindre un camp, personne n'étant au-dessus
+   * de lui pour l'y mettre.
+   */
   private assertOutranks(
-    requester: { role: string; teamId: string | null },
-    target: { role: string; teamId: string | null },
+    requester: { id: string; role: string; teamId: string | null },
+    target: { id: string; role: string; teamId: string | null },
   ): void {
+    if (requester.id === target.id) return;
     const mine = ROLE_RANK[requester.role] ?? 9;
     const theirs = ROLE_RANK[target.role] ?? 9;
     if (mine >= theirs) {

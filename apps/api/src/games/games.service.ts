@@ -48,6 +48,8 @@ export interface MemberView {
   squadId: string | null;
   /** Supérieur direct dans la chaîne de commandement (§5). */
   reportsToMembershipId: string | null;
+  /** Étiquette libre affichée à côté de l'insigne (fréquence radio…). */
+  note: string | null;
   lifeStatus: string;
   lastPosition: { x: number; y: number } | null;
   lastPositionAt: Date | null;
@@ -343,7 +345,7 @@ export class GamesService {
     membershipId: string,
     dto: UpdateMemberDto,
   ): Promise<MemberView> {
-    if (dto.role == null && dto.unitType == null) {
+    if (dto.role == null && dto.unitType == null && dto.note === undefined) {
       throw new BadRequestException('Rien à modifier');
     }
     const user = await this.usersService.getOrCreate(auth);
@@ -397,11 +399,35 @@ export class GamesService {
       }
     }
 
+    if (dto.note !== undefined) {
+      // L'étiquette suit la même portée que l'insigne : on écrit la sienne,
+      // ou celle d'un homme qu'on commande. Une fréquence radio se donne
+      // vers le bas de la chaîne, jamais vers le haut.
+      const isSelf = target.id === requester.id;
+      if (!isSelf) {
+        await this.permissions.assert(
+          requester,
+          PERMISSIONS.MEMBERS_BADGE,
+          'Votre grade ne permet pas d’étiqueter les autres',
+        );
+        if (requesterRank >= targetRank) {
+          throw new ForbiddenException(
+            'L’étiquette ne se modifie que sur soi ou sur un rang inférieur',
+          );
+        }
+      }
+    }
+
     await this.db
       .update(memberships)
       .set({
         ...(dto.role != null ? { role: dto.role } : {}),
         ...(dto.unitType != null ? { unitType: dto.unitType } : {}),
+        // Une étiquette vide efface : sur le terrain on retire une fréquence
+        // en effaçant le champ, pas en cherchant un bouton « supprimer ».
+        ...(dto.note !== undefined
+          ? { note: dto.note?.trim() ? dto.note.trim() : null }
+          : {}),
       })
       .where(eq(memberships.id, target.id));
     return this.emitMemberUpdate(gameId, target.id);
@@ -515,6 +541,7 @@ export class GamesService {
         teamId: memberships.teamId,
         squadId: memberships.squadId,
         reportsToMembershipId: memberships.reportsToMembershipId,
+        note: memberships.note,
         lifeStatus: memberships.lifeStatus,
         lastPosition: memberships.lastPosition,
         lastPositionAt: memberships.lastPositionAt,

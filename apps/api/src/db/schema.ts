@@ -96,6 +96,13 @@ export const memberships = pgTable(
     reportsToMembershipId: uuid('reports_to_membership_id').references(
       (): AnyPgColumn => memberships.id,
     ),
+    /**
+     * Étiquette libre affichée à côté de l'insigne sur la carte : fréquence
+     * radio, indicatif, numéro de véhicule. Courte à dessein — elle est
+     * peinte dans l'image du marqueur, et au-delà d'une poignée de
+     * caractères elle mange la carte au lieu de l'informer.
+     */
+    note: text('note'),
     lifeStatus: text('life_status', {
       enum: ['alive', 'dead', 'medic_needed', 'support'],
     })
@@ -219,6 +226,9 @@ export const squads = pgTable('squads', {
   reportsToMembershipId: uuid('reports_to_membership_id').references(
     (): AnyPgColumn => memberships.id,
   ),
+
+  /** Étiquette libre du groupe (fréquence radio du réseau, indicatif). */
+  note: text('note'),
 
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
