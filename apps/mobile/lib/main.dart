@@ -7,6 +7,9 @@ import 'game/games_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // L'adresse du serveur d'abord : tout le reste s'en sert, et elle peut
+  // avoir été corrigée à la main sur cet appareil.
+  await AppConfig.chargerUrlServeur();
   if (AppConfig.isAuthConfigured) {
     final key = AppConfig.supabaseAnonKey;
     if (key.startsWith('sb_')) {

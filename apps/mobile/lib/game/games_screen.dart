@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../db/local_db.dart';
 import '../map/map_screen.dart';
+import '../serveur_dialog.dart';
 import 'games_api.dart';
 import 'invites_screen.dart';
 import 'models.dart';
@@ -180,6 +181,17 @@ class _GamesScreenState extends State<GamesScreen> {
       appBar: AppBar(
         title: const Text('Mes parties'),
         actions: [
+          IconButton(
+            tooltip: 'Adresse du serveur',
+            icon: const Icon(Icons.dns_outlined),
+            onPressed: () async {
+              if (await demanderUrlServeur(context) && mounted) {
+                setState(() {
+                  _games = _load();
+                });
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Carte libre (sans partie)',
             icon: const Icon(Icons.map_outlined),

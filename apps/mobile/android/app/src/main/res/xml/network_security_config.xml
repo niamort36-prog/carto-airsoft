@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Autorise le HTTP en clair UNIQUEMENT vers la machine de dev
-     (10.0.2.2 = localhost du PC vu depuis l'émulateur Android).
-     Tout le reste (Supabase, tuiles IGN/OSM, API de prod) reste en HTTPS. -->
+<!--
+  Le serveur arbitre se joint par HTTP en clair sur un réseau local : un PC
+  qui sert le jeu au fond d'un terrain n'a ni nom de domaine ni certificat.
+  Android ne sait pas exprimer « le HTTP en clair, mais seulement vers un
+  réseau privé » — la liste ne prend que des noms d'hôtes, pas des plages
+  d'adresses. Et comme l'adresse du serveur se saisit désormais dans
+  l'application, elle ne peut plus être énumérée ici.
+
+  Ce qui reste vrai : l'authentification (Supabase) et les fonds de carte
+  (IGN, OSM) sont servis en HTTPS et le restent, quel que soit ce réglage.
+
+  À resserrer le jour d'une publication grand public : exposer alors l'API
+  derrière HTTPS et remettre `cleartextTrafficPermitted="false"`.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">10.0.2.2</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

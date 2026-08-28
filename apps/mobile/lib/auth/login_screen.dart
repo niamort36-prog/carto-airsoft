@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app_config.dart';
+import '../serveur_dialog.dart';
+
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
@@ -136,6 +139,22 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextButton(
                     onPressed: _loading ? null : () => _submit(signUp: true),
                     child: const Text('Créer un compte'),
+                  ),
+                  const SizedBox(height: 24),
+                  // Atteignable avant toute connexion : sans le bon
+                  // serveur, se connecter ne mène nulle part.
+                  TextButton.icon(
+                    icon: const Icon(Icons.dns_outlined, size: 18),
+                    label: const Text('Adresse du serveur'),
+                    onPressed: _loading
+                        ? null
+                        : () async {
+                            if (await demanderUrlServeur(context) && mounted) {
+                              _showMessage(
+                                'Serveur : ${AppConfig.apiBaseUrl}',
+                              );
+                            }
+                          },
                   ),
                 ],
               ),
