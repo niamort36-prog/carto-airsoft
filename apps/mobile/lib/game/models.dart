@@ -350,6 +350,7 @@ class InviteView {
   const InviteView({
     required this.id,
     required this.role,
+    required this.code,
     required this.maxUses,
     required this.useCount,
     required this.active,
@@ -362,6 +363,10 @@ class InviteView {
 
   final String id;
   final String role;
+
+  /// Code court à dicter (« ABCD-EFGH »). Réaffichable, contrairement au
+  /// jeton : c'est lui qui permet de remontrer un QR après coup.
+  final String code;
   final int? maxUses;
   final int useCount;
   final bool active;
@@ -390,6 +395,7 @@ class InviteView {
   factory InviteView.fromJson(Map<String, dynamic> json) => InviteView(
         id: json['id'] as String,
         role: json['role'] as String,
+        code: json['code'] as String? ?? '',
         maxUses: json['maxUses'] as int?,
         useCount: json['useCount'] as int? ?? 0,
         active: json['active'] as bool? ?? false,

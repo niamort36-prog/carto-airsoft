@@ -421,6 +421,7 @@ class _GamesScreenState extends State<GamesScreen> {
                               builder: (_) => InvitesScreen(
                                 gameId: g.id,
                                 gameName: g.name,
+                                myRole: g.role,
                               ),
                             ),
                           ),

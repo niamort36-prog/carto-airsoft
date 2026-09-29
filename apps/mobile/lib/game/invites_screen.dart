@@ -3,19 +3,34 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../app_config.dart';
 import 'games_api.dart';
 import 'models.dart';
 
-/// Gestion des QR d'invitation (§7.2) — réservée au commandant.
+/// Gestion des invitations (§7.2).
+///
+/// Ouverte à qui détient la permission `invites:manage`, pas à un grade
+/// donné : la matrice de permissions décide, et elle se règle par partie.
+/// Un capitaine à qui on l'accorde peut donc recruter lui-même — mais
+/// jamais au-dessus de son propre grade, le serveur le refuse et l'écran
+/// ne le propose pas.
 ///
 /// Le QR encode un jeton opaque : le rôle n'y figure jamais, c'est le
 /// serveur qui l'attribue au scan. Le jeton n'est connu qu'à la création,
 /// d'où l'affichage immédiat du QR (et la possibilité de le régénérer).
 class InvitesScreen extends StatefulWidget {
-  const InvitesScreen({super.key, required this.gameId, required this.gameName});
+  const InvitesScreen({
+    super.key,
+    required this.gameId,
+    required this.gameName,
+    required this.myRole,
+  });
 
   final String gameId;
   final String gameName;
+
+  /// Mon propre grade dans cette partie : il borne ce que je peux donner.
+  final String myRole;
 
   @override
   State<InvitesScreen> createState() => _InvitesScreenState();
@@ -34,6 +49,14 @@ class _InvitesScreenState extends State<InvitesScreen> {
     setState(() => _invites = GamesApi.invites(widget.gameId));
   }
 
+  /// Grades qu'on peut donner : strictement le sien ou en dessous, et
+  /// jamais commandant — ce grade-là ne se fabrique pas par un code, qui
+  /// se photographie et se transfère.
+  List<String> get _invitableRoles => [
+        for (final role in const ['capitaine', 'chef_escouade', 'joueur'])
+          if (roleRank(role) >= roleRank(widget.myRole)) role,
+      ];
+
   Future<void> _create(String role) async {
     try {
       final invite = await GamesApi.createInvite(widget.gameId, role: role);
@@ -43,6 +66,111 @@ class _InvitesScreenState extends State<InvitesScreen> {
     } catch (e) {
       _showError(e);
     }
+  }
+
+  /// Montre le QR d'une invitation DÉJÀ créée, autant de fois qu'on veut.
+  ///
+  /// Il encode le code court et non le jeton : le jeton n'existe en base
+  /// que sous forme d'empreinte (§7.2) et serait donc introuvable après
+  /// coup. Le code, lui, se relit — c'est ce qui permet de ressortir son
+  /// téléphone devant un joueur arrivé en retard.
+  ///
+  /// Plein écran et fond blanc : un QR se scanne d'autant mieux qu'il est
+  /// grand et contrasté, et sur un parking en plein soleil ça compte plus
+  /// que l'esthétique.
+  Future<void> _showCodeQr(InviteView invite) async {
+    if (invite.code.isEmpty) {
+      _showError('Cette invitation n’a pas de code à montrer.');
+      return;
+    }
+    final lien = '${AppConfig.apiBaseUrl.replaceFirst(RegExp(r'/v1/?$'), '')}'
+        '/j/${invite.code}';
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (pageContext) => Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.white,
+            foregroundColor: Colors.black,
+            title: Text(
+              'À faire scanner — ${roleLabel(invite.role).toLowerCase()}',
+              style: const TextStyle(fontSize: 16),
+            ),
+          ),
+          body: SafeArea(
+            child: Center(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    QrImageView(
+                      data: lien,
+                      size: 300,
+                      backgroundColor: Colors.white,
+                    ),
+                    const SizedBox(height: 20),
+                    // Le grade en clair : c'est ce qui dit lequel montrer
+                    // à qui. Le code encodé, lui, reste opaque.
+                    Text(
+                      roleLabel(invite.role).toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Le même code écrit : qui n'arrive pas à scanner le
+                    // tape. Les deux chemins mènent au même endroit.
+                    const Text(
+                      'ou saisir ce code :',
+                      style: TextStyle(color: Colors.black54),
+                    ),
+                    const SizedBox(height: 4),
+                    SelectableText(
+                      invite.code,
+                      style: const TextStyle(
+                        color: Colors.black,
+                        fontSize: 34,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 4,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Text(
+                      'Mettez la luminosité au maximum pour qu’il se scanne '
+                      'au soleil.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.black.withValues(alpha: 0.5)),
+                    ),
+                    const SizedBox(height: 12),
+                    TextButton.icon(
+                      icon: const Icon(Icons.share, color: Colors.black),
+                      label: const Text(
+                        'Partager le code',
+                        style: TextStyle(color: Colors.black),
+                      ),
+                      onPressed: () => SharePlus.instance.share(
+                        ShareParams(
+                          text: 'Rejoins « ${widget.gameName} » comme '
+                              '${roleLabel(invite.role).toLowerCase()} — '
+                              'code ${invite.code} ou $lien',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   /// Affiche le QR à faire scanner. Une fois fermé, le jeton est perdu :
@@ -205,11 +333,11 @@ class _InvitesScreenState extends State<InvitesScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    for (final role in const [
-                      'capitaine',
-                      'chef_escouade',
-                      'joueur',
-                    ])
+                    // On ne propose que ce qu'on peut réellement donner.
+                    // Le serveur refuse d'inviter au-dessus de son propre
+                    // grade ; afficher le bouton quand même ne servirait
+                    // qu'à faire échouer le geste.
+                    for (final role in _invitableRoles)
                       FilledButton.tonalIcon(
                         icon: const Icon(Icons.qr_code_2),
                         label: Text(roleLabel(role)),
@@ -217,6 +345,11 @@ class _InvitesScreenState extends State<InvitesScreen> {
                       ),
                   ],
                 ),
+                if (_invitableRoles.isEmpty)
+                  Text(
+                    'Votre grade ne permet d’inviter personne.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
@@ -258,8 +391,10 @@ class _InvitesScreenState extends State<InvitesScreen> {
                       ),
                       title: Text(roleLabel(invite.role)),
                       subtitle: Text(
-                        '${invite.stateLabel} · ${invite.usageLabel}',
+                        '${invite.code} · ${invite.stateLabel} · '
+                        '${invite.usageLabel}',
                       ),
+                      onTap: invite.active ? () => _showCodeQr(invite) : null,
                       trailing: invite.active
                           ? IconButton(
                               tooltip: 'Révoquer',

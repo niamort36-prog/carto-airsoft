@@ -126,13 +126,19 @@ export class InvitesService {
       .where(eq(inviteTokens.tokenHash, InvitesService.hash(token)));
     if (parJeton) return parJeton;
 
-    const code = InvitesService.normalizeCode(raw);
-    if (code.length !== InvitesService.CODE_LENGTH) return undefined;
-    const [parCode] = await this.db
-      .select()
-      .from(inviteTokens)
-      .where(eq(inviteTokens.code, code));
-    return parCode;
+    // Le code peut arriver nu (« ABCD-EFGH ») ou porté par une URL, quand
+    // le QR réaffichable l'encode sous la forme `.../j/ABCD-EFGH` pour
+    // rester lisible par l'appareil photo natif. Les deux doivent marcher.
+    for (const candidat of [token, raw]) {
+      const code = InvitesService.normalizeCode(candidat);
+      if (code.length !== InvitesService.CODE_LENGTH) continue;
+      const [parCode] = await this.db
+        .select()
+        .from(inviteTokens)
+        .where(eq(inviteTokens.code, code));
+      if (parCode) return parCode;
+    }
+    return undefined;
   }
 
   /** Création d'un QR : soumise à la permission `invites:manage` (§5, §7.2). */

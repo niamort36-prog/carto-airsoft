@@ -154,6 +154,65 @@ assert(
   'l’URL du QR mène à la même invitation que le code',
 );
 
+// --- Un gradé recrute lui-même, dans sa limite ----------------------------
+// C'est le cœur du « si activé » : la permission `invites:manage` est dans
+// la matrice, réglable par partie. Le capitaine l'a par défaut.
+membres = await api('GET', `/games/${partie.id}/members`, orga);
+const leCapitaine = membres.find((m) => m.role === 'capitaine');
+const sesPermissions = await api(
+  'GET', `/games/${partie.id}/permissions`, gradee,
+);
+assert(
+  sesPermissions.mine.includes('invites:manage'),
+  'le capitaine reçoit le droit d’inviter par la matrice, pas par son grade',
+);
+
+const parLeCapitaine = await api('POST', `/games/${partie.id}/invites`, gradee, {
+  role: 'joueur', teamId: bleu.id,
+});
+assert(
+  parLeCapitaine.code.length === 9,
+  'il génère lui-même un code pour un grade inférieur',
+);
+
+const memeGrade = await api('POST', `/games/${partie.id}/invites`, gradee, {
+  role: 'capitaine',
+});
+assert(memeGrade.active, 'et peut recruter à son propre grade');
+
+const auDessus = await refus(() =>
+  api('POST', `/games/${partie.id}/invites`, gradee, { role: 'commandant' }),
+);
+assert(
+  auDessus === 400,
+  'mais jamais au-dessus : le commandant ne se fabrique pas par code',
+);
+
+const sansPermission = await refus(() =>
+  api('POST', `/games/${partie.id}/invites`, rougeJoueur, { role: 'joueur' }),
+);
+assert(
+  sansPermission === 403,
+  'et un joueur sans la permission n’invite personne',
+);
+
+// --- Le QR réaffichable : le code survit à sa création --------------------
+const listeApres = await api('GET', `/games/${partie.id}/invites`, gradee);
+const sien = listeApres.find((i) => i.id === parLeCapitaine.id);
+assert(
+  sien.code === parLeCapitaine.code,
+  'son code se relit plus tard — il peut ressortir son téléphone',
+);
+
+// --- Le code porté par une URL (le QR réaffichable) -----------------------
+const parUrlCode = await api('POST', '/join/preview', bleuJoueur, {
+  token: `https://carto.exemple.fr/j/${inviteQr.code}`,
+});
+assert(
+  parUrlCode.gameName === 'Test code',
+  'un code encodé dans une URL se résout comme un code nu',
+);
+
 // --- Ce qui ne passe pas ---------------------------------------------------
 const inconnu = await refus(() =>
   api('POST', '/join', bleuJoueur, { token: 'ZZZZ-ZZZZ' }),
