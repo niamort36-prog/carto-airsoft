@@ -24,6 +24,9 @@ class InvitesScreen extends StatefulWidget {
     required this.gameId,
     required this.gameName,
     required this.myRole,
+    this.myTeamId,
+    this.mySquadId,
+    this.mySquadName,
   });
 
   final String gameId;
@@ -31,6 +34,12 @@ class InvitesScreen extends StatefulWidget {
 
   /// Mon propre grade dans cette partie : il borne ce que je peux donner.
   final String myRole;
+
+  /// Mon camp et mon escouade : ce qui permet d'inviter DANS son groupe et
+  /// pas seulement dans la partie.
+  final String? myTeamId;
+  final String? mySquadId;
+  final String? mySquadName;
 
   @override
   State<InvitesScreen> createState() => _InvitesScreenState();
@@ -57,9 +66,18 @@ class _InvitesScreenState extends State<InvitesScreen> {
           if (roleRank(role) >= roleRank(widget.myRole)) role,
       ];
 
-  Future<void> _create(String role) async {
+  Future<void> _create(
+    String role, {
+    String? teamId,
+    String? squadId,
+  }) async {
     try {
-      final invite = await GamesApi.createInvite(widget.gameId, role: role);
+      final invite = await GamesApi.createInvite(
+        widget.gameId,
+        role: role,
+        teamId: teamId,
+        squadId: squadId,
+      );
       _reload();
       if (!mounted) return;
       await _showQr(invite);
@@ -350,6 +368,47 @@ class _InvitesScreenState extends State<InvitesScreen> {
                     'Votre grade ne permet d’inviter personne.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                // Inviter DANS son groupe, et pas seulement dans la partie :
+                // le scan place alors l'ami directement à côté de soi, sans
+                // que personne ait à l'affecter ensuite.
+                if (widget.mySquadId != null) ...[
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Text(
+                    'Inviter dans mon unité',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Le scan place directement dans '
+                    '${widget.mySquadName ?? 'votre unité'} — rien à '
+                    'affecter ensuite.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.group_add),
+                    label: Text(
+                      'QR pour ${widget.mySquadName ?? 'mon unité'}',
+                    ),
+                    onPressed: () => _create(
+                      'joueur',
+                      teamId: widget.myTeamId,
+                      squadId: widget.mySquadId,
+                    ),
+                  ),
+                ] else if (widget.myTeamId != null) ...[
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    icon: const Icon(Icons.flag_outlined),
+                    label: const Text('QR pour mon camp'),
+                    onPressed: () =>
+                        _create('joueur', teamId: widget.myTeamId),
+                  ),
+                ],
               ],
             ),
           ),

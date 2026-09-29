@@ -143,6 +143,47 @@ class GamesApi {
     return out;
   }
 
+  /// Forme un camp (permission `teams:manage`).
+  ///
+  /// Sans camp, une partie créée depuis le téléphone est inerte : pas
+  /// d'escouade possible, donc pas d'affectation, donc pas d'invitation
+  /// ciblée. C'est le premier geste après avoir créé la partie.
+  static Future<TeamSummary> createTeam(
+    String gameId,
+    String name, {
+    String? color,
+  }) async {
+    final res = await http.post(
+      _uri('/games/$gameId/teams'),
+      headers: _headers(),
+      body: jsonEncode({'name': name, 'color': ?color}),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return TeamSummary(
+      id: body['id'] as String,
+      name: body['name'] as String,
+      color: body['color'] as String? ?? '#2196F3',
+    );
+  }
+
+  /// Camps de la partie.
+  static Future<List<TeamSummary>> teams(String gameId) async {
+    final res = await http.get(
+      _uri('/games/$gameId/teams'),
+      headers: _headers(),
+    );
+    _ensureOk(res);
+    return [
+      for (final t in (jsonDecode(res.body) as List<dynamic>))
+        TeamSummary(
+          id: (t as Map<String, dynamic>)['id'] as String,
+          name: t['name'] as String,
+          color: t['color'] as String? ?? '#2196F3',
+        ),
+    ];
+  }
+
   /// Forme une escouade dans un camp (permission `squads:manage`).
   static Future<SquadSummary> createSquad(
     String gameId,
@@ -305,15 +346,26 @@ class GamesApi {
   }
 
   /// Génère un QR pour un rôle. Le jeton en clair n'est renvoyé qu'ici.
+  /// Crée une invitation. [teamId] et [squadId] la portent : le scan place
+  /// alors directement le joueur dans le camp, voire dans l'escouade —
+  /// c'est ce qui permet d'inviter des amis DANS SON groupe et non
+  /// simplement dans la partie.
   static Future<InviteView> createInvite(
     String gameId, {
     required String role,
     int? maxUses,
+    String? teamId,
+    String? squadId,
   }) async {
     final res = await http.post(
       _uri('/games/$gameId/invites'),
       headers: _headers(),
-      body: jsonEncode({'role': role, 'maxUses': ?maxUses}),
+      body: jsonEncode({
+        'role': role,
+        'maxUses': ?maxUses,
+        'teamId': ?teamId,
+        'squadId': ?squadId,
+      }),
     );
     _ensureOk(res);
     return InviteView.fromJson(jsonDecode(res.body) as Map<String, dynamic>);

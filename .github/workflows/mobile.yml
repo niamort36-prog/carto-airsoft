@@ -36,6 +36,36 @@ jobs:
         run: flutter test
         working-directory: apps/mobile
 
+  # Android, iOS et web sortent du MEME code Dart : leurs fonctions ne
+  # peuvent pas diverger. Ce qui peut diverger, c'est la configuration de
+  # plateforme — et un numero de version fige a la main est la facon la plus
+  # discrete de livrer trois applications qui se croient differentes.
+  parite:
+    name: Parité des trois cibles
+    needs: qualite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Une seule source de version
+        run: |
+          set -e
+          VERSION=$(grep -m1 '^version:' pubspec.yaml | awk '{print $2}')
+          echo "pubspec : $VERSION"
+
+          grep -q 'versionCode = flutter.versionCode'             android/app/build.gradle.kts             || { echo "::error::Android fige son versionCode au lieu de lire celui de Flutter"; exit 1; }
+          grep -q 'versionName = flutter.versionName'             android/app/build.gradle.kts             || { echo "::error::Android fige son versionName au lieu de lire celui de Flutter"; exit 1; }
+          grep -q 'FLUTTER_BUILD_NAME' ios/Runner/Info.plist             || { echo "::error::iOS fige sa version au lieu de lire celle de Flutter"; exit 1; }
+          grep -q 'FLUTTER_BUILD_NUMBER' ios/Runner/Info.plist             || { echo "::error::iOS fige son numero de build"; exit 1; }
+          echo "Les trois cibles lisent la même version."
+        working-directory: apps/mobile
+      - name: Recenser les écarts de plateforme assumés
+        run: |
+          set -e
+          echo "Branches propres à une plateforme (doivent rester rares et"
+          echo "commentées — chacune est une fonction qui diffère quelque part) :"
+          grep -rn 'defaultTargetPlatform ==\|kIsWeb' lib/ || true
+        working-directory: apps/mobile
+
   android:
     name: Android (APK)
     needs: qualite

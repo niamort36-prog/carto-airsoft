@@ -196,6 +196,31 @@ assert(
   'et un joueur sans la permission n’invite personne',
 );
 
+// --- Inviter DANS son unité, pas seulement dans la partie ----------------
+// C'est le geste « rejoins mon escouade » : le scan place l'ami à côté de
+// soi, sans que personne ait à l'affecter ensuite.
+const monGroupe = await api('POST', `/games/${partie.id}/squads`, orga, {
+  teamId: bleu.id, name: 'MON GROUPE', echelon: 'groupe',
+});
+const inviteGroupe = await api('POST', `/games/${partie.id}/invites`, orga, {
+  role: 'joueur', teamId: bleu.id, squadId: monGroupe.id,
+});
+const apercuGroupe = await api('POST', '/join/preview', rougeJoueur, {
+  token: inviteGroupe.code,
+});
+assert(
+  apercuGroupe.teamName === 'Bleu' && apercuGroupe.squadName === 'MON GROUPE',
+  'un code peut porter le camp ET l’unité',
+);
+
+const ami = await token('test.e2e11@cartoairsoft.dev');
+await api('POST', '/join', ami, { token: inviteGroupe.code });
+membres = await api('GET', `/games/${partie.id}/members`, orga);
+assert(
+  membres.some((m) => m.squadId === monGroupe.id),
+  'et le scan dépose directement dans l’unité',
+);
+
 // --- Le QR réaffichable : le code survit à sa création --------------------
 const listeApres = await api('GET', `/games/${partie.id}/invites`, gradee);
 const sien = listeApres.find((i) => i.id === parLeCapitaine.id);

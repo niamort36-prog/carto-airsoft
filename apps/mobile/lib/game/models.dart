@@ -584,3 +584,18 @@ class MemberView {
     );
   }
 }
+
+/// Un camp de la partie (§4).
+class TeamSummary {
+  const TeamSummary({
+    required this.id,
+    required this.name,
+    required this.color,
+  });
+
+  final String id;
+  final String name;
+
+  /// Couleur hexadécimale du camp, telle que le serveur la porte.
+  final String color;
+}

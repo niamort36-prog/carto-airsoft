@@ -18,6 +18,7 @@ import '../game/chat_screen.dart';
 import '../game/chat_sync.dart';
 import '../game/game_realtime.dart';
 import '../game/games_api.dart';
+import '../game/invites_screen.dart';
 import '../game/models.dart';
 import '../game/object_sync.dart';
 import '../game/perks_sheet.dart';
@@ -766,17 +767,29 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                     const SizedBox(height: 8),
                     if (_vueOrganigramme) ...[
-                      if (_can(Perm.squadsManage))
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.add, size: 18),
-                            label: const Text('Former une unité'),
-                            onPressed: () async {
-                              Navigator.pop(sheetContext);
-                              await _createUnit();
-                            },
-                          ),
+                      if (_can(Perm.teamsManage) || _can(Perm.squadsManage))
+                        Wrap(
+                          spacing: 4,
+                          children: [
+                            if (_can(Perm.teamsManage))
+                              TextButton.icon(
+                                icon: const Icon(Icons.flag_outlined, size: 18),
+                                label: const Text('Former un camp'),
+                                onPressed: () async {
+                                  Navigator.pop(sheetContext);
+                                  await _createTeam();
+                                },
+                              ),
+                            if (_can(Perm.squadsManage))
+                              TextButton.icon(
+                                icon: const Icon(Icons.add, size: 18),
+                                label: const Text('Former une unité'),
+                                onPressed: () async {
+                                  Navigator.pop(sheetContext);
+                                  await _createUnit();
+                                },
+                              ),
+                          ],
                         ),
                       Flexible(
                         child: CommandTreeView(
@@ -883,7 +896,55 @@ class _MapScreenState extends State<MapScreen> {
         fit: BoxFit.contain,
       ),
       title: Text('${me.displayName} (moi)'),
-      subtitle: Text('${roleLabel(me.role)} · ${me.lifeStatus.label}'),
+      // Son camp se choisit ici : c'est la ligne qui dit qui l'on est dans
+      // cette partie, et sans camp rien d'autre ne peut se faire.
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${roleLabel(me.role)} · ${me.lifeStatus.label}'),
+          // Son camp et son unité se choisissent ici : c'est la ligne qui
+          // dit qui l'on est dans cette partie. Le serveur autorise chacun
+          // à se placer lui-même — sans quoi le créateur d'une partie ne
+          // pourrait rejoindre aucun camp, personne n'étant au-dessus de
+          // lui pour l'y mettre.
+          Row(
+            children: [
+              InkWell(
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickMyTeam();
+                },
+                child: Text(
+                  me.teamId == null
+                      ? 'Choisir un camp'
+                      : '▸ ${_unitNames[me.teamId] ?? 'camp'}',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+              if (me.teamId != null) ...[
+                const Text('  ·  '),
+                InkWell(
+                  onTap: () {
+                    Navigator.pop(context);
+                    _joinMyOwnSquad(me);
+                  },
+                  child: Text(
+                    me.squadId == null
+                        ? 'Rejoindre une unité'
+                        : '▸ ${_unitNames[me.squadId] ?? 'unité'}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
       // L'insigne se mérite : sans la permission, on le reçoit de sa hiérarchie.
       trailing: !_can(Perm.membersBadge)
           ? null
@@ -1159,6 +1220,224 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  /// Ouvre les invitations en lui passant mon camp et mon unité : c'est ce
+  /// qui permet de proposer un QR qui place l'ami à côté de soi.
+  void _openInvites() {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    if (me == null) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => InvitesScreen(
+          gameId: widget.gameId!,
+          gameName: widget.gameName ?? 'Partie',
+          myRole: me.role,
+          myTeamId: me.teamId,
+          mySquadId: me.squadId,
+          mySquadName:
+              me.squadId == null ? null : _unitNames[me.squadId!],
+        ),
+      ),
+    );
+  }
+
+  /// Se placer soi-même dans une unité de son camp — ou en former une.
+  ///
+  /// Nécessaire pour inviter « dans mon escouade » : on ne peut pas y
+  /// convier quelqu'un tant qu'on n'y est pas soi-même.
+  Future<void> _joinMyOwnSquad(MemberView me) async {
+    final unites = [
+      for (final s in _squads)
+        if (s.teamId == me.teamId) s,
+    ]..sort((a, b) => echelonRank(a.echelon) - echelonRank(b.echelon));
+
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(title: Text('Mon unité')),
+            const Divider(height: 8),
+            for (final u in unites)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  u.id == me.squadId
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(u.name),
+                subtitle: Text(SymbolEchelon.fromWire(u.echelon).label),
+                onTap: () => Navigator.pop(sheetContext, u.id),
+              ),
+            if (_can(Perm.squadsManage))
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.group_add),
+                title: const Text('Former une unité'),
+                onTap: () => Navigator.pop(sheetContext, 'new'),
+              ),
+            if (me.squadId != null)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.link_off),
+                title: const Text('Quitter mon unité'),
+                onTap: () => Navigator.pop(sheetContext, 'none'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choix == null || !mounted) return;
+
+    try {
+      if (choix == 'new') {
+        await _createUnit();
+        return;
+      }
+      await GamesApi.assignMember(
+        widget.gameId!,
+        me.membershipId,
+        squadId: choix == 'none' ? null : choix,
+      );
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack(
+        choix == 'none' ? 'Vous avez quitté votre unité' : 'Unité rejointe',
+      );
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
+  }
+
+  /// Couleurs proposées pour un camp : celles qui se distinguent d'un coup
+  /// d'œil sur une carte verte, et qui ne se confondent pas entre elles.
+  static const _couleursCamp = <String, String>{
+    '#2196F3': 'Bleu',
+    '#F44336': 'Rouge',
+    '#4CAF50': 'Vert',
+    '#FFC107': 'Jaune',
+    '#9C27B0': 'Violet',
+    '#FF9800': 'Orange',
+  };
+
+  /// Forme un camp. C'est le premier geste après avoir créé une partie
+  /// depuis le téléphone : sans camp, rien ne peut être organisé ensuite.
+  Future<void> _createTeam() async {
+    final couleur = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('Couleur du camp'),
+              subtitle: Text(
+                'Elle sert à le reconnaître sur la carte et dans les listes.',
+              ),
+            ),
+            const Divider(height: 8),
+            for (final entry in _couleursCamp.entries)
+              ListTile(
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 12,
+                  backgroundColor: Color(
+                    int.parse(entry.key.substring(1), radix: 16) | 0xFF000000,
+                  ),
+                ),
+                title: Text(entry.value),
+                onTap: () => Navigator.pop(sheetContext, entry.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (couleur == null || !mounted) return;
+
+    final nom = await _askText(
+      'Nom du camp',
+      _couleursCamp[couleur] ?? 'Bleu',
+      initial: _couleursCamp[couleur],
+    );
+    if (nom == null || nom.trim().isEmpty || !mounted) return;
+
+    try {
+      await GamesApi.createTeam(widget.gameId!, nom.trim(), color: couleur);
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack('Camp « ${nom.trim()} » formé');
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
+  }
+
+  /// Rejoint un camp, ou en change. Le serveur autorise chacun à se placer
+  /// lui-même : sans cela, le créateur d'une partie ne pourrait rejoindre
+  /// aucun camp, personne n'étant au-dessus de lui pour l'y mettre.
+  Future<void> _pickMyTeam() async {
+    List<TeamSummary> camps;
+    try {
+      camps = await GamesApi.teams(widget.gameId!);
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+      return;
+    }
+    if (!mounted) return;
+
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(title: Text('Mon camp')),
+            const Divider(height: 8),
+            if (camps.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(
+                  'Aucun camp dans cette partie. Formez-en un d’abord.',
+                ),
+              ),
+            for (final t in camps)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  t.id == me?.teamId
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  color: Color(
+                    int.parse(t.color.substring(1), radix: 16) | 0xFF000000,
+                  ),
+                ),
+                title: Text(t.name),
+                onTap: () => Navigator.pop(sheetContext, t.id),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choix == null || !mounted) return;
+
+    try {
+      await GamesApi.assignMember(
+        widget.gameId!,
+        _myMembershipId!,
+        teamId: choix,
+      );
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack('Vous voilà dans le camp choisi');
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
   }
 
   /// Choix d'un échelon, présenté du plus grand au plus petit — on forme
@@ -2867,6 +3146,15 @@ class _MapScreenState extends State<MapScreen> {
             label: 'Alliés',
             badge: '${_allies.length}',
             onPressed: _showAllies,
+          ),
+        // Inviter depuis la carte, et non seulement depuis la liste des
+        // parties : c'est ici qu'on est quand un ami arrive sur le terrain,
+        // et c'est ici qu'on sait dans quelle unité on se trouve.
+        if (_inGame && _can(Perm.invitesManage))
+          ToolAction(
+            icon: Icons.person_add_alt,
+            label: 'Inviter',
+            onPressed: _openInvites,
           ),
         if (_inGame)
           ToolAction(
