@@ -60,14 +60,25 @@ puis y placer un adversaire à portée du drone :
 node apps/api/e2e/demo-setup.mjs "Op Fontainebleau"
 ```
 
-## Console web (organisateurs)
+## Les deux sites
+
+Deux choses distinctes tournent dans un navigateur, et il vaut mieux ne pas
+les confondre :
 
 ```bash
-npm run dev --workspace apps/console
+npm run console:dev    # :5173 — console de préparation (React)
+npm run webapp:dev     # :5174 — l'application elle-même (Flutter web)
 ```
 
-Puis http://localhost:5173 — se connecter avec le compte de l'app mobile.
-Copier `apps/console/.env.example` en `.env` au premier lancement.
+| | Console | Application web |
+|---|---|---|
+| Ce que c'est | un outil **distinct**, pour organiser | la **copie exacte** de l'app mobile |
+| Pour qui | l'organisateur, au calme devant un PC | tout le monde, depuis n'importe quel appareil |
+| Ce qu'on y fait | camps, escouades, permissions, QR, relecture | ce qu'on fait dans l'app |
+| Sur le terrain | non | pour **regarder**, pas pour jouer — voir [docs/WEB.md](docs/WEB.md) |
+
+Les deux se connectent avec **le compte de l'application mobile**. Copier
+`apps/console/.env.example` en `.env` au premier lancement de la console.
 
 ## App mobile
 

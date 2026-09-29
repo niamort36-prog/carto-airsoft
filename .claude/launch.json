@@ -4,8 +4,22 @@
     {
       "name": "console",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace", "apps/console"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "apps/console"
+      ],
       "port": 5173
+    },
+    {
+      "name": "webapp",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "webapp:dev"
+      ],
+      "port": 5174
     }
   ]
 }

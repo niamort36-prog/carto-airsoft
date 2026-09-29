@@ -54,6 +54,23 @@ exige du réseau**. En forêt sans couverture, l'écran sera vide.
 * **Caméra (QR)** : fonctionne, mais **exige HTTPS** — en `http://`, le
   navigateur refuse l'accès à la caméra. À prévoir pour l'hébergement.
 
+## Lancer en développement
+
+Deux sites cohabitent, sur deux ports :
+
+```bash
+npm run console:dev    # :5173 — console de préparation (React)
+npm run webapp:dev     # :5174 — l'application elle-même (Flutter web)
+```
+
+Le second est la **copie exacte de l'application** : même code, mêmes
+écrans, même compte. Le premier est un outil distinct, pensé pour un
+clavier et un grand écran.
+
+Sur ce port de développement, l'application vise `http://localhost:3000/v1`.
+Si l'API tourne ailleurs, nul besoin de recompiler — le bouton *Adresse du
+serveur*, sur l'écran de connexion, l'enregistre dans le navigateur.
+
 ## Construire et déployer
 
 ```bash
@@ -63,7 +80,14 @@ flutter build web --release \
 ```
 
 Le résultat est dans `build/web/` : des fichiers statiques, à servir tels
-quels. Trois exigences côté hébergeur :
+quels. Pour un déploiement ailleurs qu'à la racine du domaine, il faut le
+dire à la compilation — sinon la page charge et reste blanche :
+
+```bash
+flutter build web --release --base-href=/app/
+```
+
+Quatre exigences côté hébergeur :
 
 1. **HTTPS**, sans quoi ni la géolocalisation ni la caméra ne fonctionnent.
 2. **`sqlite3.wasm` et `drift_worker.js`** doivent être servis depuis la
@@ -71,6 +95,8 @@ quels. Trois exigences côté hébergeur :
    l'application démarre puis échoue à la première écriture locale.
 3. L'API doit accepter l'origine du site (CORS). L'API l'autorise
    largement en développement ; à restreindre en production.
+4. **Toutes les routes doivent renvoyer `index.html`**, l'application gérant
+   sa navigation elle-même.
 
 ## Rester en phase avec les applications
 
@@ -82,13 +108,22 @@ sont bien présents et que la bibliothèque de carte est déclarée dans
 
 ## Ce qui a été vérifié, et ce qui ne l'a pas été
 
-Vérifié : la compilation, le démarrage de la page, le chargement de
-`maplibre-gl`, la présence et le service des fichiers de la base locale,
-l'absence d'erreur en console.
+Vérifié **à l'écran**, dans un navigateur, sur le site servi :
 
-**Pas vérifié : l'application à l'usage.** Le panneau d'aperçu de
-l'environnement de développement n'a aucune dimension (`0×0`), donc Flutter
-n'y dessine rien. Ni la carte, ni la connexion, ni le bandeau n'ont pu être
-vus à l'écran. À faire au premier déploiement — en particulier le rendu de
-la carte, qui passe ici par une bibliothèque JavaScript et non par le moteur
-natif.
+* la compilation et le démarrage de la page ;
+* l'écran de connexion dessiné et lisible, en largeur bureau comme en
+  largeur téléphone ;
+* `maplibre-gl` 5.24.0 chargé et disponible ;
+* le réglage *Adresse du serveur* : il s'ouvre, lit l'adresse courante et
+  l'enregistre dans le stockage du navigateur ;
+* aucune erreur en console.
+
+**Pas encore vérifié : tout ce qui est derrière la connexion**, et d'abord
+**le rendu de la carte**. Il passe ici par une bibliothèque JavaScript et
+non par le moteur natif : c'est le point le plus susceptible de différer
+des applications. À regarder à la première connexion réelle.
+
+Une remarque d'outillage : Flutter dessine dans un `canvas`. Les outils qui
+inspectent le DOM — extensions, tests de bout en bout web, lecteurs
+d'écran — n'y voient rien par défaut. Ce n'est pas un défaut de cette
+application, c'est la nature de la cible.
