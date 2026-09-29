@@ -127,14 +127,148 @@ class _GamesScreenState extends State<GamesScreen> {
     }
   }
 
+  /// Rejoindre : par QR, ou en tapant le code annoncé par l'organisateur.
+  ///
+  /// Les deux existent parce que les deux situations existent : sur un
+  /// parking on scanne une feuille imprimée, au téléphone on se fait dicter
+  /// huit caractères.
+  Future<void> _joinGame() async {
+    final parCode = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.qr_code_scanner, size: 32),
+              title: const Text('Scanner un QR'),
+              subtitle: const Text(
+                'Invitation, drapeau à capturer ou bonus',
+              ),
+              onTap: () => Navigator.pop(sheetContext, false),
+            ),
+            ListTile(
+              leading: const Icon(Icons.keyboard, size: 32),
+              title: const Text('Saisir un code'),
+              subtitle: const Text('Les huit caractères donnés par l’orga'),
+              onTap: () => Navigator.pop(sheetContext, true),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (parCode == null || !mounted) return;
+
+    if (parCode) {
+      await _joinByCode();
+    } else {
+      await _joinByScan();
+    }
+  }
+
   /// Scanner un QR : rejoindre, capturer un drapeau ou récupérer un bonus.
   /// C'est le serveur qui reconnaît la nature du code et arbitre (§7.2,
   /// §7.8, §7.9) — l'app se contente d'annoncer le résultat.
-  Future<void> _joinGame() async {
+  Future<void> _joinByScan() async {
     final outcome = await Navigator.of(context).push<ScanOutcome>(
       MaterialPageRoute(builder: (_) => const ScanScreen()),
     );
     if (outcome == null) return;
+    _announce(outcome);
+  }
+
+  /// Saisie du code court, puis confirmation de ce à quoi il engage.
+  Future<void> _joinByCode() async {
+    final controller = TextEditingController();
+    final code = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Code de la partie'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Les huit caractères annoncés par l’organisateur. Ni O ni I '
+              'ne s’y trouvent : ce sont des zéros et des uns.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                hintText: 'ABCD-EFGH',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Continuer'),
+          ),
+        ],
+      ),
+    );
+    if (code == null || code.trim().isEmpty || !mounted) return;
+
+    // On montre ce à quoi le code engage AVANT d'inscrire : se tromper de
+    // caractère et se retrouver chez l'adversaire serait pénible à défaire.
+    final ({
+      String gameName,
+      String role,
+      String? teamName,
+      String? squadName,
+    }) apercu;
+    try {
+      apercu = await GamesApi.previewInvite(code.trim());
+    } catch (e) {
+      _showError(e);
+      return;
+    }
+    if (!mounted) return;
+
+    final confirme = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(apercu.gameName),
+        content: Text(
+          [
+            'Vous rejoindrez comme ${roleLabel(apercu.role)}.',
+            if (apercu.teamName != null) 'Camp : ${apercu.teamName}.',
+            if (apercu.squadName != null) 'Escouade : ${apercu.squadName}.',
+          ].join('\n'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Rejoindre'),
+          ),
+        ],
+      ),
+    );
+    if (confirme != true || !mounted) return;
+
+    try {
+      _announce(await GamesApi.scan(code.trim()));
+    } catch (e) {
+      _showError(e);
+    }
+  }
+
+  /// Annonce le résultat d'un scan ou d'un code, et rafraîchit la liste.
+  void _announce(ScanOutcome outcome) {
     _reload();
     if (!mounted) return;
     final message = switch (outcome) {

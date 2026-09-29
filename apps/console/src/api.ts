@@ -83,11 +83,24 @@ export interface TeamEntry {
 export interface Invite {
   id: string;
   role: string;
+  /**
+   * Code court à dicter (« ABCD-EFGH »). Réaffichable, contrairement au
+   * jeton du QR que le serveur ne garde que haché (§7.2).
+   */
+  code: string;
   useCount: number;
   maxUses: number | null;
   active: boolean;
   token?: string;
   url?: string;
+}
+
+/** Ce qu'une invitation donnerait, sans rejoindre. */
+export interface InvitePreview {
+  gameName: string;
+  role: string;
+  teamName: string | null;
+  squadName: string | null;
 }
 
 export interface MapObject {
@@ -181,11 +194,26 @@ export const api = {
     ),
   invites: (gameId: string) =>
     request<Invite[]>('GET', `/games/${gameId}/invites`),
-  createInvite: (gameId: string, role: string, squadId?: string) =>
+  createInvite: (
+    gameId: string,
+    role: string,
+    teamId?: string,
+    squadId?: string,
+  ) =>
     request<Invite>('POST', `/games/${gameId}/invites`, {
       role,
+      ...(teamId ? { teamId } : {}),
       ...(squadId ? { squadId } : {}),
     }),
+  /** Aperçu avant de s'engager : partie, grade, camp. */
+  previewInvite: (code: string) =>
+    request<InvitePreview>('POST', '/join/preview', { token: code.trim() }),
+  joinByCode: (code: string) =>
+    request<{ gameId: string; gameName: string; role: string }>(
+      'POST',
+      '/join',
+      { token: code.trim() },
+    ),
   revokeInvite: (gameId: string, inviteId: string) =>
     request<unknown>('DELETE', `/games/${gameId}/invites/${inviteId}`),
   permissions: (gameId: string) =>

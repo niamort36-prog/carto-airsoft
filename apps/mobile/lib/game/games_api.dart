@@ -327,6 +327,33 @@ class GamesApi {
     _ensureOk(res);
   }
 
+  /// Ce qu'une invitation donnerait, SANS rejoindre : partie, grade, camp.
+  ///
+  /// Un QR se scanne les yeux fermés ; un code se tape, et on peut se
+  /// tromper de caractère. Montrer ce à quoi on s'engage évite de le
+  /// découvrir une fois inscrit dans le camp adverse.
+  static Future<
+      ({
+        String gameName,
+        String role,
+        String? teamName,
+        String? squadName,
+      })> previewInvite(String code) async {
+    final res = await http.post(
+      _uri('/join/preview'),
+      headers: _headers(),
+      body: jsonEncode({'token': code}),
+    );
+    _ensureOk(res);
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    return (
+      gameName: body['gameName'] as String,
+      role: body['role'] as String,
+      teamName: body['teamName'] as String?,
+      squadName: body['squadName'] as String?,
+    );
+  }
+
   /// Présente un jeton scanné. Le serveur reconnaît seul sa nature —
   /// invitation, capture d'objectif ou bonus (§7.2, §7.8, §7.9) — et arbitre.
   static Future<ScanOutcome> scan(String token) async {

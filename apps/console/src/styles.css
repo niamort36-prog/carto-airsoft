@@ -279,3 +279,14 @@ table.stats .dot {
   margin-right: 6px;
   vertical-align: middle;
 }
+
+/* Code d'invitation : il se lit à voix haute, donc en chasse fixe et
+   espacé — « ABCD-EFGH » dicté sans hésitation sur un parking. */
+.code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.12em;
+  font-weight: 600;
+}
+.code-big {
+  font-size: 1.5rem;
+}

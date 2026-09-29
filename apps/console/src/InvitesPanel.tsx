@@ -15,6 +15,7 @@ export function InvitesPanel({
 }) {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [role, setRole] = useState('joueur');
+  const [teamId, setTeamId] = useState('');
   const [squadId, setSquadId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [shown, setShown] = useState<Invite | null>(null);
@@ -43,6 +44,7 @@ export function InvitesPanel({
       const invite = await api.createInvite(
         gameId,
         role,
+        teamId || undefined,
         squadId || undefined,
       );
       setShown(invite);
@@ -58,7 +60,11 @@ export function InvitesPanel({
 
   return (
     <>
-      <h2>Invitations QR</h2>
+      <h2>Invitations</h2>
+      <p className="muted">
+        Un code par camp et par grade : chacun rejoint du bon côté sans que
+        personne ait à l’affecter ensuite.
+      </p>
       {error && <div className="error">{error}</div>}
       <div className="list">
         <select value={role} onChange={(e) => setRole(e.target.value)}>
@@ -66,8 +72,22 @@ export function InvitesPanel({
           <option value="chef_escouade">Chef d’escouade</option>
           <option value="joueur">Joueur</option>
         </select>
+        <select
+          value={teamId}
+          onChange={(e) => {
+            setTeamId(e.target.value);
+            setSquadId('');
+          }}
+        >
+          <option value="">Sans camp</option>
+          {teams.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+        </select>
         <select value={squadId} onChange={(e) => setSquadId(e.target.value)}>
-          <option value="">Sans affectation</option>
+          <option value="">Sans escouade</option>
           {squads.map((s) => (
             <option key={s.id} value={s.id}>
               {s.team} · {s.name}
@@ -75,7 +95,7 @@ export function InvitesPanel({
           ))}
         </select>
         <button className="primary" onClick={create}>
-          Générer un QR
+          Générer
         </button>
       </div>
 
@@ -87,11 +107,19 @@ export function InvitesPanel({
           <div className="item" key={i.id}>
             <span className="grow">
               {ROLE_LABELS[i.role] ?? i.role}
+              {' — '}
+              <code className="code">{i.code}</code>
               <br />
               <span className="muted">
-                {i.active ? 'active' : 'inactive'} · {i.useCount} scan(s)
+                {i.active ? 'active' : 'inactive'} · {i.useCount} entrée(s)
               </span>
             </span>
+            <button
+              onClick={() => navigator.clipboard?.writeText(i.code)}
+              title="Copier le code"
+            >
+              Copier
+            </button>
             {i.active && (
               <button
                 className="danger"
@@ -116,9 +144,13 @@ export function InvitesPanel({
               {(ROLE_LABELS[shown.role] ?? shown.role).toUpperCase()}
             </strong>
           </div>
+          <p style={{ marginTop: 12, textAlign: 'center' }}>
+            ou code à dicter :{' '}
+            <code className="code code-big">{shown.code}</code>
+          </p>
           <p className="muted" style={{ maxWidth: 280, marginTop: 12 }}>
-            Ce QR ne sera plus affichable ensuite : le serveur n’en garde
-            qu’une empreinte.
+            Le QR ne sera plus affichable ensuite : le serveur n’en garde
+            qu’une empreinte. Le code, lui, reste lisible dans la liste.
           </p>
           <div className="row" style={{ marginTop: 12 }}>
             <button onClick={() => window.print()}>Imprimer</button>

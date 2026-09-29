@@ -13,10 +13,17 @@ import {
 import { ASSIGNABLE_ROLES } from '../games/dto';
 
 /**
- * Rôles invitables. Le commandant ne se délègue pas par QR : il n'y a qu'un
- * chef, celui qui a créé la partie (§5). Les autres grades s'invitent.
+ * Rôles invitables — tout sauf commandant.
+ *
+ * Une partie peut compter plusieurs commandants, mais on n'en fabrique pas
+ * par code : un code se photographie, se transfère et se réutilise. Le
+ * grade qui donne la main sur toute la partie se donne à une personne
+ * nommée, par une promotion délibérée, jamais par un bout de papier qui
+ * traîne sur un parking.
  */
-export const INVITABLE_ROLES = ASSIGNABLE_ROLES;
+export const INVITABLE_ROLES = ASSIGNABLE_ROLES.filter(
+  (r) => r !== 'commandant',
+);
 
 export class CreateInviteDto {
   @ApiProperty({ enum: INVITABLE_ROLES, example: 'joueur' })

@@ -304,6 +304,19 @@ export const inviteTokens = pgTable(
     teamId: uuid('team_id'),
     squadId: uuid('squad_id'),
     tokenHash: text('token_hash').notNull().unique(),
+
+    /**
+     * Code court, lisible et dictable — celui qu'on annonce à la voix sur un
+     * parking avant la partie.
+     *
+     * Stocké EN CLAIR, contrairement au jeton du QR : il doit pouvoir être
+     * réaffiché, sans quoi l'organisateur devrait le recopier à la main au
+     * moment de le créer. C'est un affaiblissement assumé et borné — le code
+     * ne vaut que pour une partie, se révoque, expire, et ne donne jamais un
+     * grade supérieur à celui que son créateur pouvait donner.
+     */
+    code: text('code').notNull().unique(),
+
     /** null = réutilisable sans limite (typiquement le rôle joueur). */
     maxUses: integer('max_uses'),
     useCount: integer('use_count').notNull().default(0),

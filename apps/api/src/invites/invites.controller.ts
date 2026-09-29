@@ -69,4 +69,14 @@ export class InvitesController {
   ) {
     return this.invites.redeem(auth, dto.token);
   }
+
+  @Post('join/preview')
+  @ApiOperation({
+    summary:
+      'Ce qu’une invitation donnerait, sans rejoindre : partie, grade, ' +
+      'camp. Un code se tape, et on peut se tromper de caractère.',
+  })
+  preview(@Body() dto: RedeemInviteDto) {
+    return this.invites.preview(dto.token);
+  }
 }

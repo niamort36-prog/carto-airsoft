@@ -5,6 +5,7 @@ import {
   ROLE_LABELS,
   supabase,
   type GameEntry,
+  type InvitePreview,
   type Member,
   type TeamEntry,
 } from './api';
@@ -43,6 +44,10 @@ function Console() {
   // La console sert à deux moments distincts : avant la partie pour la
   // préparer, après pour la relire.
   const [view, setView] = useState<'prep' | 'replay'>('prep');
+  // Rejoindre depuis le navigateur : la console n'est plus réservée à
+  // l'organisateur, un joueur peut y entrer avec le code qu'on lui donne.
+  const [codeSaisi, setCodeSaisi] = useState('');
+  const [apercu, setApercu] = useState<InvitePreview | null>(null);
 
   useEffect(() => {
     api.games().then(setGames).catch((e: Error) => setError(e.message));
@@ -61,6 +66,32 @@ function Console() {
       ]);
       setMembers(m);
       setTeams(t);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  // Montre ce à quoi le code engage avant d'inscrire : se tromper de
+  // caractère et atterrir chez l'adversaire serait pénible à défaire.
+  async function previewCode() {
+    setError(null);
+    setApercu(null);
+    try {
+      setApercu(await api.previewInvite(codeSaisi));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function joinByCode() {
+    setError(null);
+    try {
+      const rejointe = await api.joinByCode(codeSaisi);
+      const liste = await api.games();
+      setGames(liste);
+      setSelected(liste.find((g) => g.game.id === rejointe.gameId) ?? null);
+      setCodeSaisi('');
+      setApercu(null);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -140,6 +171,38 @@ function Console() {
         <button style={{ marginTop: 8 }} onClick={createGame}>
           + Nouvelle partie
         </button>
+
+        <h2 style={{ marginTop: 16 }}>Rejoindre</h2>
+        <div className="row">
+          <input
+            className="grow"
+            value={codeSaisi}
+            placeholder="ABCD-EFGH"
+            onChange={(e) => {
+              setCodeSaisi(e.target.value.toUpperCase());
+              setApercu(null);
+            }}
+          />
+          <button onClick={previewCode} disabled={codeSaisi.trim().length < 8}>
+            Vérifier
+          </button>
+        </div>
+        {apercu && (
+          <div className="item" style={{ marginTop: 8 }}>
+            <span className="grow">
+              {apercu.gameName}
+              <br />
+              <span className="muted">
+                {ROLE_LABELS[apercu.role] ?? apercu.role}
+                {apercu.teamName ? ` · camp ${apercu.teamName}` : ''}
+                {apercu.squadName ? ` · ${apercu.squadName}` : ''}
+              </span>
+            </span>
+            <button className="primary" onClick={joinByCode}>
+              Rejoindre
+            </button>
+          </div>
+        )}
 
         {selected && (
           <>
