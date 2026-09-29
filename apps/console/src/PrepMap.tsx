@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { api, type MapObject } from './api';
+import { api, type MapObject, type Objective } from './api';
+import {
+  AFFILIATIONS,
+  symbolLabel,
+  symbolsFor,
+  SYMBOLS,
+  type Affiliation,
+  type SymbolEntry,
+} from './icons';
 
 /**
  * Carte de préparation (§8) : dessiner zones, lignes et points de passage
@@ -27,7 +35,25 @@ const STYLE = {
   layers: [{ id: 'plan', type: 'raster' as const, source: 'plan' }],
 };
 
-type Mode = 'none' | 'waypoint' | 'line' | 'zone';
+type Mode = 'none' | 'waypoint' | 'line' | 'zone' | 'flag';
+
+/** Couleurs de tracé : celles qui se distinguent sur un fond de forêt. */
+const COULEURS = [
+  { hex: '#2196F3', label: 'Bleu' },
+  { hex: '#F44336', label: 'Rouge' },
+  { hex: '#4CAF50', label: 'Vert' },
+  { hex: '#FFC107', label: 'Jaune' },
+  { hex: '#9C27B0', label: 'Violet' },
+  { hex: '#FF9800', label: 'Orange' },
+  { hex: '#FFFFFF', label: 'Blanc' },
+  { hex: '#000000', label: 'Noir' },
+];
+
+const FAMILLES: Record<SymbolEntry['family'], string> = {
+  unit: 'Unités',
+  structure: 'Structures',
+  point: 'Points d’ordre',
+};
 
 export function PrepMap({ gameId }: { gameId: string }) {
   const container = useRef<HTMLDivElement>(null);
@@ -35,13 +61,28 @@ export function PrepMap({ gameId }: { gameId: string }) {
   const [mode, setMode] = useState<Mode>('none');
   const [draft, setDraft] = useState<[number, number][]>([]);
   const [objects, setObjects] = useState<MapObject[]>([]);
+  const [objectives, setObjectives] = useState<Objective[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  // Ce qu'on s'apprête à poser : couleur du tracé, symbole du marqueur.
+  const [couleur, setCouleur] = useState('#2196F3');
+  const [symbole, setSymbole] = useState('infantry_allied');
+  const [affiliation, setAffiliation] = useState<Affiliation>('allied');
+  const [famille, setFamille] = useState<SymbolEntry['family']>('unit');
+  const [pickerOuvert, setPickerOuvert] = useState(false);
+
+  const symboleChoisi =
+    SYMBOLS.find((s) => s.id === symbole) ?? SYMBOLS[0];
 
   // Refs pour que le handler de clic (attaché une fois) voie l'état courant.
   const modeRef = useRef(mode);
   const draftRef = useRef(draft);
+  const couleurRef = useRef(couleur);
+  const symboleRef = useRef(symbole);
   modeRef.current = mode;
   draftRef.current = draft;
+  couleurRef.current = couleur;
+  symboleRef.current = symbole;
 
   useEffect(() => {
     if (!container.current || map.current) return;
@@ -111,6 +152,9 @@ export function PrepMap({ gameId }: { gameId: string }) {
       if (current === 'waypoint') {
         void save('marker', { type: 'Point', coordinates: point }, point);
         setMode('none');
+      } else if (current === 'flag') {
+        void placerDrapeau(point);
+        setMode('none');
       } else {
         setDraft([...draftRef.current, point]);
       }
@@ -154,10 +198,52 @@ export function PrepMap({ gameId }: { gameId: string }) {
     } as GeoJSON.FeatureCollection);
   }, [objects]);
 
+  // Les drapeaux se posent en marqueurs HTML : ils ne sont pas des objets
+  // de carte, et les mêler aux tracés laisserait croire qu'on les efface
+  // de la même façon.
+  const marqueursFlags = useRef<maplibregl.Marker[]>([]);
+  useEffect(() => {
+    marqueursFlags.current.forEach((m) => m.remove());
+    marqueursFlags.current = objectives.map((o) => {
+      const el = document.createElement('div');
+      el.className = 'flag-marker';
+      el.title = o.name;
+      el.textContent = '⚑';
+      const label = document.createElement('span');
+      label.textContent = o.name;
+      el.appendChild(label);
+      return new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([o.lng, o.lat])
+        .addTo(map.current!);
+    });
+  }, [objectives]);
+
   async function load() {
     try {
-      const res = await api.sync(gameId);
+      const [res, flags] = await Promise.all([
+        api.sync(gameId),
+        api.objectives(gameId).catch(() => [] as Objective[]),
+      ]);
       setObjects(res.objects.filter((o) => !('deletedAt' in o && o.deletedAt)));
+      setObjectives(flags);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  /// Pose un drapeau. Ce n'est PAS un objet de carte : c'est un objectif
+  /// arbitré par le serveur (§7.8), avec son QR de capture et son score.
+  async function placerDrapeau(point: [number, number]) {
+    const nom = prompt('Nom du drapeau', `Drapeau ${objectives.length + 1}`);
+    if (nom == null || !nom.trim()) return;
+    setError(null);
+    try {
+      await api.createObjective(gameId, {
+        name: nom.trim(),
+        lng: point[0],
+        lat: point[1],
+      });
+      load();
     } catch (e) {
       setError((e as Error).message);
     }
@@ -179,14 +265,16 @@ export function PrepMap({ gameId }: { gameId: string }) {
           lng: reference[0],
           ...(kind === 'marker' ? {} : { geometry }),
           properties: {
-            color: kind === 'zone' ? '#F44336' : '#2196F3',
+            // La couleur et le symbole partent avec l'objet : le terrain
+            // voit exactement ce que la console a posé.
+            color: couleurRef.current,
             unitLabel:
               kind === 'zone'
                 ? 'Zone'
                 : kind === 'line'
                   ? 'Ligne'
-                  : 'Point de passage',
-            icon: kind === 'marker' ? 'infantry_allied' : undefined,
+                  : symbolLabel(symboleRef.current),
+            icon: kind === 'marker' ? symboleRef.current : undefined,
           },
           createdAt: new Date().toISOString(),
         },
@@ -220,7 +308,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
             setDraft([]);
           }}
         >
-          Point
+          Symbole
         </button>
         <button
           className={mode === 'line' ? 'primary' : ''}
@@ -240,6 +328,39 @@ export function PrepMap({ gameId }: { gameId: string }) {
         >
           Zone
         </button>
+        <button
+          className={mode === 'flag' ? 'primary' : ''}
+          onClick={() => {
+            setMode(mode === 'flag' ? 'none' : 'flag');
+            setDraft([]);
+          }}
+        >
+          Drapeau
+        </button>
+
+        {/* La couleur vaut pour ce qu'on s'apprête à tracer. Elle voyage
+            dans `properties.color`, donc le terrain voit la même. */}
+        {(mode === 'line' || mode === 'zone' || mode === 'waypoint') && (
+          <span className="swatches">
+            {COULEURS.map((c) => (
+              <button
+                key={c.hex}
+                title={c.label}
+                className={`swatch ${couleur === c.hex ? 'selected' : ''}`}
+                style={{ background: c.hex }}
+                onClick={() => setCouleur(c.hex)}
+              />
+            ))}
+          </span>
+        )}
+
+        {mode === 'waypoint' && (
+          <button onClick={() => setPickerOuvert(true)}>
+            <img src={symboleChoisi.url} alt="" className="swatch-icon" />
+            {symbolLabel(symboleChoisi.id)}
+          </button>
+        )}
+
         {(mode === 'line' || mode === 'zone') && (
           <>
             <span className="muted" style={{ alignSelf: 'center' }}>
@@ -256,8 +377,65 @@ export function PrepMap({ gameId }: { gameId: string }) {
             </button>
           </>
         )}
+        {mode !== 'none' && mode !== 'line' && mode !== 'zone' && (
+          <span className="muted" style={{ alignSelf: 'center' }}>
+            Cliquez sur la carte
+          </span>
+        )}
         {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
       </div>
+
+      {pickerOuvert && (
+        <dialog open className="picker">
+          <h1>Choisir un symbole</h1>
+          <div className="row">
+            {AFFILIATIONS.map((a) => (
+              <button
+                key={a.key}
+                className={affiliation === a.key ? 'primary' : ''}
+                onClick={() => setAffiliation(a.key)}
+              >
+                <span
+                  className="swatch-dot"
+                  style={{ background: a.color }}
+                />
+                {a.label}
+              </button>
+            ))}
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            {(['unit', 'structure', 'point'] as const).map((f) => (
+              <button
+                key={f}
+                className={famille === f ? 'primary' : ''}
+                onClick={() => setFamille(f)}
+              >
+                {FAMILLES[f]}
+              </button>
+            ))}
+          </div>
+          <div className="symbol-grid">
+            {symbolsFor(famille, affiliation).map((s) => (
+              <button
+                key={s.id}
+                className={`symbol ${symbole === s.id ? 'selected' : ''}`}
+                title={symbolLabel(s.id)}
+                onClick={() => {
+                  setSymbole(s.id);
+                  setPickerOuvert(false);
+                }}
+              >
+                <img src={s.url} alt={symbolLabel(s.id)} />
+              </button>
+            ))}
+          </div>
+          <div className="row" style={{ marginTop: 12 }}>
+            <button className="primary" onClick={() => setPickerOuvert(false)}>
+              Fermer
+            </button>
+          </div>
+        </dialog>
+      )}
     </>
   );
 }

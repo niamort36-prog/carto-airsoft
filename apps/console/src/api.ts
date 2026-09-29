@@ -95,6 +95,16 @@ export interface Invite {
   url?: string;
 }
 
+/** Un drapeau à capturer (§7.8). */
+export interface Objective {
+  id: string;
+  name: string;
+  lat: number;
+  lng: number;
+  captureOrder: number | null;
+  holderTeamId: string | null;
+}
+
 /** Ce qu'une invitation donnerait, sans rejoindre. */
 export interface InvitePreview {
   gameName: string;
@@ -216,6 +226,13 @@ export const api = {
     ),
   revokeInvite: (gameId: string, inviteId: string) =>
     request<unknown>('DELETE', `/games/${gameId}/invites/${inviteId}`),
+  /** Drapeaux de la partie (§7.8). */
+  objectives: (gameId: string) =>
+    request<Objective[]>('GET', `/games/${gameId}/objectives`),
+  createObjective: (
+    gameId: string,
+    body: { name: string; lat: number; lng: number; captureOrder?: number },
+  ) => request<Objective>('POST', `/games/${gameId}/objectives`, body),
   permissions: (gameId: string) =>
     request<{
       catalogue: Array<{ key: string; label: string }>;
