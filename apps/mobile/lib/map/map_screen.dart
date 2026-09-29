@@ -24,6 +24,8 @@ import '../game/perks_sheet.dart';
 import '../game/tracking_mode.dart';
 import '../offline/offline_sheet.dart';
 import 'elevation.dart';
+import 'command_tree.dart';
+import 'command_tree_view.dart';
 import 'grid_ref.dart';
 import 'hud.dart';
 import 'map_styles.dart';
@@ -80,6 +82,10 @@ class _MapScreenState extends State<MapScreen> {
   /// Étiquettes libres des escouades (fréquence radio du réseau), par
   /// identifiant d'escouade — peintes à côté du marqueur de groupe.
   Map<String, String> _squadNotes = const {};
+
+  /// Escouades de la partie avec leurs rattachements — ce qui permet de
+  /// dresser l'organigramme (§5).
+  List<SquadSummary> _squads = const [];
 
   /// Drapeaux de la partie (§7.8) et scores.
   List<ObjectiveView> _objectives = const [];
@@ -327,6 +333,7 @@ class _MapScreenState extends State<MapScreen> {
           _myPermissions = perms;
           _unitNames = org.names;
           _squadNotes = org.notes;
+          _squads = org.squads;
           _objectives = flags;
           _scores = scores;
         });
@@ -702,45 +709,107 @@ class _MapScreenState extends State<MapScreen> {
     _showSnack('Suivi : ${chosen.label} (${chosen.hint})');
   }
 
-  /// Liste des alliés : qui est là, dans quel état, à quand remonte sa position.
+  /// Vue retenue dans le panneau des alliés — elle survit à la fermeture du
+  /// panneau : qui consulte l'organigramme y revient d'ordinaire.
+  bool _vueOrganigramme = false;
+
+  /// Panneau des alliés, sous deux angles : la LISTE dit qui est là et
+  /// permet d'agir ; l'ORGANIGRAMME dit qui commande qui. La première
+  /// répond à « qui joue ? », le second à « à qui je passe cet ordre ».
   void _showAllies() {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) {
-        final allies = _allies;
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text('Alliés', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                if (_myMembershipId != null &&
-                    _members[_myMembershipId] != null)
-                  _myTile(_members[_myMembershipId]!),
-                const Divider(height: 8),
-                if (allies.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Text(
-                      'Personne d’autre n’a encore rejoint cette partie.',
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          final allies = _allies;
+          final moi = _myMembershipId != null ? _members[_myMembershipId] : null;
+          return SafeArea(
+            child: ConstrainedBox(
+              // L'arbre a besoin de hauteur pour se lire ; la liste s'y
+              // adapte sans y être contrainte.
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Alliés',
+                        style: Theme.of(sheetContext).textTheme.titleLarge),
+                    const SizedBox(height: 8),
+                    SegmentedButton<bool>(
+                      showSelectedIcon: false,
+                      style: const ButtonStyle(
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      segments: const [
+                        ButtonSegment(
+                          value: false,
+                          icon: Icon(Icons.list, size: 18),
+                          label: Text('Liste'),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          icon: Icon(Icons.account_tree_outlined, size: 18),
+                          label: Text('Organigramme'),
+                        ),
+                      ],
+                      selected: {_vueOrganigramme},
+                      onSelectionChanged: (choix) {
+                        setState(() => _vueOrganigramme = choix.first);
+                        setSheetState(() {});
+                      },
                     ),
-                  )
-                else
-                  Flexible(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: _groupedAllies(allies),
-                    ),
-                  ),
-              ],
+                    const SizedBox(height: 8),
+                    if (_vueOrganigramme)
+                      Flexible(
+                        child: CommandTreeView(
+                          tree: buildCommandTree(
+                            members: _members.values,
+                            squads: _squads,
+                          ),
+                          myMembershipId: _myMembershipId,
+                          onTapMember: (m) {
+                            if (m.lat == null) return;
+                            Navigator.pop(sheetContext);
+                            _controller?.animateCamera(
+                              CameraUpdate.newLatLngZoom(
+                                LatLng(m.lat!, m.lng!),
+                                15,
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    else ...[
+                      if (moi != null) _myTile(moi),
+                      const Divider(height: 8),
+                      if (allies.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 16),
+                          child: Text(
+                            'Personne d’autre n’a encore rejoint cette partie.',
+                          ),
+                        )
+                      else
+                        Flexible(
+                          child: ListView(
+                            shrinkWrap: true,
+                            children: _groupedAllies(allies),
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -1178,6 +1247,7 @@ class _MapScreenState extends State<MapScreen> {
       setState(() {
         _unitNames = org.names;
         _squadNotes = org.notes;
+        _squads = org.squads;
       });
       await _refreshMarkers();
     } catch (_) {

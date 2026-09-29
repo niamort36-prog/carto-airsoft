@@ -216,11 +216,16 @@ class GamesApi {
   static Future<Map<String, String>> unitNames(String gameId) async =>
       (await organisation(gameId)).names;
 
-  /// Noms des unités ET étiquettes des escouades, en un seul appel : les
-  /// deux viennent de la même réponse, les demander séparément doublerait
-  /// le trafic pour rien.
-  static Future<({Map<String, String> names, Map<String, String> notes})>
-      organisation(String gameId) async {
+  /// Toute l'organisation en UN appel : noms des camps et des escouades,
+  /// étiquettes, et les escouades complètes avec leurs rattachements. Les
+  /// trois viennent de la même réponse ; les demander séparément
+  /// triplerait le trafic pour rien.
+  static Future<
+      ({
+        Map<String, String> names,
+        Map<String, String> notes,
+        List<SquadSummary> squads,
+      })> organisation(String gameId) async {
     final res = await http.get(
       _uri('/games/$gameId/teams'),
       headers: _headers(),
@@ -228,6 +233,7 @@ class GamesApi {
     _ensureOk(res);
     final names = <String, String>{};
     final notes = <String, String>{};
+    final squads = <SquadSummary>[];
     for (final t in (jsonDecode(res.body) as List<dynamic>)) {
       final team = t as Map<String, dynamic>;
       names[team['id'] as String] = team['name'] as String;
@@ -236,9 +242,17 @@ class GamesApi {
         names[squad['id'] as String] = squad['name'] as String;
         final note = (squad['note'] as String?)?.trim() ?? '';
         if (note.isNotEmpty) notes[squad['id'] as String] = note;
+        squads.add(SquadSummary(
+          id: squad['id'] as String,
+          name: squad['name'] as String,
+          teamId: team['id'] as String,
+          leaderMembershipId: squad['leaderMembershipId'] as String?,
+          reportsToMembershipId: squad['reportsToMembershipId'] as String?,
+          note: note.isEmpty ? null : note,
+        ));
       }
     }
-    return (names: names, notes: notes);
+    return (names: names, notes: notes, squads: squads);
   }
 
   /// Mes permissions dans une partie (§5) — l'app s'y conforme pour
