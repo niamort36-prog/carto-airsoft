@@ -765,7 +765,19 @@ class _MapScreenState extends State<MapScreen> {
                       },
                     ),
                     const SizedBox(height: 8),
-                    if (_vueOrganigramme)
+                    if (_vueOrganigramme) ...[
+                      if (_can(Perm.squadsManage))
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Former une unité'),
+                            onPressed: () async {
+                              Navigator.pop(sheetContext);
+                              await _createUnit();
+                            },
+                          ),
+                        ),
                       Flexible(
                         child: CommandTreeView(
                           tree: buildCommandTree(
@@ -783,8 +795,15 @@ class _MapScreenState extends State<MapScreen> {
                               ),
                             );
                           },
+                          onTapSquad: !_can(Perm.squadsManage)
+                              ? null
+                              : (noeud) {
+                                  Navigator.pop(sheetContext);
+                                  _showUnitSheet(noeud);
+                                },
                         ),
-                      )
+                      ),
+                    ]
                     else ...[
                       if (moi != null) _myTile(moi),
                       const Divider(height: 8),
@@ -1140,6 +1159,300 @@ class _MapScreenState extends State<MapScreen> {
         ),
       ),
     );
+  }
+
+  /// Choix d'un échelon, présenté du plus grand au plus petit — on forme
+  /// une compagnie avant d'y mettre des sections.
+  Future<SymbolEchelon?> _pickEchelon({SymbolEchelon? actuel}) {
+    return showModalBottomSheet<SymbolEchelon>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text('Échelon de l’unité'),
+              subtitle: Text(
+                'Ce que l’unité EST — et non ce que son effectif du moment '
+                'laisse deviner.',
+              ),
+            ),
+            const Divider(height: 8),
+            for (final e in SymbolEchelon.values.reversed)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  e == actuel
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(e.label),
+                onTap: () => Navigator.pop(sheetContext, e),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Forme une unité : son nom, son échelon, et l'unité dans laquelle elle
+  /// entre le cas échéant.
+  Future<void> _createUnit({SquadSummary? parent}) async {
+    final me = _myMembershipId != null ? _members[_myMembershipId] : null;
+    final teamId = parent?.teamId ?? me?.teamId;
+    if (teamId == null) {
+      _showSnack('Rejoignez d’abord un camp', isError: true);
+      return;
+    }
+    final nom = await _askText(
+      parent == null ? 'Nom de l’unité' : 'Sous-unité de ${parent.name}',
+      'Alpha',
+    );
+    if (nom == null || nom.trim().isEmpty || !mounted) return;
+
+    final echelon = await _pickEchelon();
+    if (echelon == null || !mounted) return;
+
+    try {
+      await GamesApi.createSquad(
+        widget.gameId!,
+        teamId,
+        nom.trim(),
+        echelon: echelon.name,
+        parentSquadId: parent?.id,
+      );
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack('${echelon.label} « ${nom.trim()} » formée');
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
+  }
+
+  /// Actions sur une unité de l'organigramme.
+  void _showUnitSheet(CommandNode noeud) {
+    final unite = _squads.where((s) => s.id == noeud.squadId).firstOrNull;
+    if (unite == null) return;
+    final echelon = SymbolEchelon.fromWire(unite.echelon);
+
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.groups, size: 32),
+              title: Text(unite.name),
+              subtitle: Text(
+                [
+                  echelon.label,
+                  if ((unite.note ?? '').isNotEmpty) unite.note!,
+                ].join(' · '),
+              ),
+            ),
+            const Divider(height: 8),
+            // Une équipe est le plus petit échelon : rien n'entre dedans.
+            if (echelonRank(unite.echelon) > 0)
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.account_tree_outlined),
+                title: const Text('Former une sous-unité'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  _createUnit(parent: unite);
+                },
+              ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.link),
+              title: const Text('Rattacher à…'),
+              subtitle: const Text('Une unité supérieure, ou un gradé'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                _attachUnit(unite);
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.military_tech_outlined),
+              title: Text('Échelon : ${echelon.label}'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final choix = await _pickEchelon(actuel: echelon);
+                if (choix == null || choix == echelon) return;
+                await _majUnite(unite, echelon: choix.name);
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Renommer'),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final nom = await _askText(
+                  'Nom de l’unité',
+                  'Alpha',
+                  initial: unite.name,
+                  confirm: 'Renommer',
+                );
+                if (nom == null || nom.trim().isEmpty) return;
+                await _majUnite(unite, name: nom.trim());
+              },
+            ),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.sell_outlined),
+              title: Text(
+                (unite.note ?? '').isEmpty
+                    ? 'Ajouter une étiquette'
+                    : 'Étiquette : ${unite.note}',
+              ),
+              onTap: () async {
+                Navigator.pop(sheetContext);
+                final note =
+                    await _askNote('Étiquette de ${unite.name}', unite.note);
+                if (note == null) return;
+                await _majUnite(unite, note: note.trim());
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Rattache une unité : à une unité d'échelon supérieur, à un gradé, ou à
+  /// rien. Les trois tiennent dans la même liste parce que c'est la même
+  /// question — de qui cette unité relève-t-elle ?
+  Future<void> _attachUnit(SquadSummary unite) async {
+    final parents = [
+      for (final s in _squads)
+        if (s.teamId == unite.teamId &&
+            s.id != unite.id &&
+            echelonRank(s.echelon) > echelonRank(unite.echelon))
+          s,
+    ]..sort((a, b) => echelonRank(b.echelon) - echelonRank(a.echelon));
+
+    final grades = [
+      for (final m in _members.values)
+        if ((m.role == 'commandant' || m.role == 'capitaine') &&
+            (m.role == 'commandant' || m.teamId == unite.teamId))
+          m,
+    ]..sort((a, b) => roleRank(a.role) - roleRank(b.role));
+
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            ListTile(title: Text('${unite.name} relève de…')),
+            const Divider(height: 8),
+            if (parents.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Text(
+                  'UNITÉS SUPÉRIEURES',
+                  style: TextStyle(fontSize: 11, letterSpacing: 1.2),
+                ),
+              ),
+              for (final p in parents)
+                ListTile(
+                  dense: true,
+                  leading: Icon(
+                    p.id == unite.parentSquadId
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(p.name),
+                  subtitle: Text(SymbolEchelon.fromWire(p.echelon).label),
+                  onTap: () => Navigator.pop(sheetContext, 'unit:${p.id}'),
+                ),
+            ],
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Text(
+                'DIRECTEMENT SOUS LES ORDRES DE',
+                style: TextStyle(fontSize: 11, letterSpacing: 1.2),
+              ),
+            ),
+            for (final m in grades)
+              ListTile(
+                dense: true,
+                leading: Icon(
+                  m.membershipId == unite.reportsToMembershipId
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                ),
+                title: Text(m.displayName),
+                subtitle: Text(roleLabel(m.role)),
+                onTap: () =>
+                    Navigator.pop(sheetContext, 'chief:${m.membershipId}'),
+              ),
+            const Divider(height: 8),
+            ListTile(
+              dense: true,
+              leading: const Icon(Icons.link_off),
+              title: const Text('Ne relever de personne'),
+              onTap: () => Navigator.pop(sheetContext, 'none'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choix == null || !mounted) return;
+
+    if (choix == 'none') {
+      await _majUnite(unite, parentSquadId: null, reportsToMembershipId: null);
+    } else if (choix.startsWith('unit:')) {
+      await _majUnite(unite, parentSquadId: choix.substring('unit:'.length));
+    } else {
+      await _majUnite(
+        unite,
+        reportsToMembershipId: choix.substring('chief:'.length),
+      );
+    }
+  }
+
+  /// Envoie une modification d'unité et recharge l'organisation.
+  ///
+  /// La sentinelle distingue « champ non fourni » de `null`, qui veut dire
+  /// « retirer le lien » — sans elle, détacher une unité et ne pas y
+  /// toucher se ressembleraient.
+  static const _absentUnite = Object();
+
+  Future<void> _majUnite(
+    SquadSummary unite, {
+    String? name,
+    String? echelon,
+    Object? note = _absentUnite,
+    Object? parentSquadId = _absentUnite,
+    Object? reportsToMembershipId = _absentUnite,
+  }) async {
+    try {
+      await GamesApi.updateSquad(
+        widget.gameId!,
+        unite.id,
+        name: name,
+        echelon: echelon,
+        note: identical(note, _absentUnite) ? GamesApi.absent : note,
+        parentSquadId: identical(parentSquadId, _absentUnite)
+            ? GamesApi.absent
+            : parentSquadId,
+        reportsToMembershipId: identical(reportsToMembershipId, _absentUnite)
+            ? GamesApi.absent
+            : reportsToMembershipId,
+      );
+      await _reloadOrganisation();
+      if (!mounted) return;
+      _showSnack('${unite.name} mise à jour');
+    } catch (e) {
+      _showSnack(e.toString(), isError: true);
+    }
   }
 
   /// Pose ou efface l'étiquette d'une escouade (fréquence radio du réseau).

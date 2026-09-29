@@ -265,6 +265,15 @@ enum SymbolEchelon {
   /// Nom de l'échelon, pour l'interface.
   final String label;
 
+  /// Échelon déclaré par le serveur. Un nom inconnu retombe sur le groupe
+  /// plutôt que de faire disparaître l'unité de la carte.
+  static SymbolEchelon fromWire(String? nom) {
+    for (final e in SymbolEchelon.values) {
+      if (e.name == nom) return e;
+    }
+    return SymbolEchelon.groupe;
+  }
+
   /// Échelon d'une unité d'après son effectif, suivant les fourchettes de
   /// la norme. En dessous de deux hommes il n'y a pas d'unité à qualifier.
   ///

@@ -28,6 +28,8 @@ SquadSummary _escouade(
   String nom = 'Alpha',
   String? chef,
   String? rattacheA,
+  String echelon = 'groupe',
+  String? dans,
 }) =>
     SquadSummary(
       id: id,
@@ -35,6 +37,8 @@ SquadSummary _escouade(
       teamId: 'bleu',
       leaderMembershipId: chef,
       reportsToMembershipId: rattacheA,
+      echelon: echelon,
+      parentSquadId: dans,
     );
 
 /// Cherche un nœud par identifiant d'homme, en profondeur.
@@ -295,6 +299,123 @@ void main() {
       final fb = lignes.firstWhere((l) => l.node.member?.membershipId == 'filsB');
       expect(fa.guides.last, isTrue, reason: 'la branche de « a » continue');
       expect(fb.guides.last, isFalse, reason: 'celle de « b » est close');
+    });
+
+    test('les unités s’emboîtent sur toute la profondeur', () {
+      // Compagnie › section › groupe › équipe : c'est la chaîne réelle
+      // d'une unité d'infanterie.
+      final arbre = buildCommandTree(
+        members: [_homme('chef', role: 'commandant')],
+        squads: [
+          _escouade('cie', nom: '1re Cie', echelon: 'compagnie'),
+          _escouade('sec', nom: '1re Sec', echelon: 'section', dans: 'cie'),
+          _escouade('grp', nom: 'Groupe 1', echelon: 'groupe', dans: 'sec'),
+          _escouade('eq', nom: 'Équipe B', echelon: 'equipe', dans: 'grp'),
+        ],
+      );
+      final lignes = flattenCommandTree(arbre.roots);
+      final profondeurs = {
+        for (final l in lignes)
+          if (l.node.squadId != null) l.node.squadId!: l.depth,
+      };
+      expect(profondeurs['cie'], 1, reason: 'sous le commandant');
+      expect(profondeurs['sec'], 2);
+      expect(profondeurs['grp'], 3);
+      expect(profondeurs['eq'], 4);
+    });
+
+    test('un homme pend sous l’unité qui le porte, si profonde soit-elle', () {
+      final arbre = buildCommandTree(
+        members: [
+          _homme('chef', role: 'commandant'),
+          _homme('a', squadId: 'grp'),
+        ],
+        squads: [
+          _escouade('cie', echelon: 'compagnie'),
+          _escouade('grp', echelon: 'groupe', dans: 'cie'),
+        ],
+      );
+      final lignes = flattenCommandTree(arbre.roots);
+      final lui = lignes.firstWhere((l) => l.node.member?.membershipId == 'a');
+      expect(lui.depth, 3, reason: 'commandant › compagnie › groupe › lui');
+    });
+
+    test('une unité peut relever d’un commandant sans échelon au-dessus', () {
+      // La demande explicite : une escouade rattachée directement au
+      // commandant, sans section intermédiaire.
+      final arbre = buildCommandTree(
+        members: [_homme('chef', role: 'commandant')],
+        squads: [
+          _escouade('cie', echelon: 'compagnie'),
+          _escouade('autonome', echelon: 'groupe', rattacheA: 'chef'),
+        ],
+      );
+      final sommet = arbre.roots.single;
+      expect(
+        sommet.children.map((n) => n.squadId).toList()..sort(),
+        ['autonome', 'cie'],
+        reason: 'les deux pendent au commandant, au même niveau',
+      );
+    });
+
+    test('deux commandants donnent deux sommets', () {
+      final arbre = buildCommandTree(
+        members: [
+          _homme('alpha', role: 'commandant'),
+          _homme('bravo', role: 'commandant'),
+        ],
+        squads: const [],
+      );
+      expect(arbre.roots.length, 2);
+      expect(
+        arbre.roots.map((n) => n.member!.membershipId).toList(),
+        ['alpha', 'bravo'],
+      );
+    });
+
+    test('à deux commandants, rien n’est rattaché au hasard', () {
+      // Accrocher au premier venu inventerait une subordination que
+      // personne n'a donnée : l'unité devient un sommet, qui se voit.
+      final arbre = buildCommandTree(
+        members: [
+          _homme('alpha', role: 'commandant'),
+          _homme('bravo', role: 'commandant'),
+        ],
+        squads: [_escouade('orpheline')],
+      );
+      expect(arbre.roots.length, 3);
+      expect(arbre.roots.map((n) => n.squadId), contains('orpheline'));
+    });
+
+    test('une unité ne se contient pas, même à travers trois échelons', () {
+      final arbre = buildCommandTree(
+        members: [_homme('chef', role: 'commandant')],
+        squads: [
+          _escouade('a', echelon: 'compagnie', dans: 'c'),
+          _escouade('b', echelon: 'section', dans: 'a'),
+          _escouade('c', echelon: 'groupe', dans: 'b'),
+        ],
+      );
+      // Aucune ne disparaît, et l'aplatissement se termine.
+      final lignes = flattenCommandTree(arbre.roots);
+      final vues = lignes
+          .where((l) => l.node.squadId != null)
+          .map((l) => l.node.squadId!)
+          .toSet();
+      expect(vues, containsAll(['a', 'b', 'c']));
+    });
+
+    test('les grandes unités se lisent avant les petites', () {
+      final arbre = buildCommandTree(
+        members: [_homme('chef', role: 'commandant')],
+        squads: [
+          _escouade('grp', nom: 'Groupe', echelon: 'groupe'),
+          _escouade('cie', nom: 'Compagnie', echelon: 'compagnie'),
+        ],
+      );
+      final sous = arbre.roots.single.children;
+      expect(sous.first.squadId, 'cie');
+      expect(sous.last.squadId, 'grp');
     });
 
     test('sans commandant, l’arbre garde plusieurs sommets', () {

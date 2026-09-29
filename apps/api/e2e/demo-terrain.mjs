@@ -74,17 +74,30 @@ await call('PATCH', `/games/${partie.id}/members/${moi.membershipId}`, chef, {
 });
 
 // --- L'escouade ALPHA, serrée, avec la fréquence de son réseau ------------
+// La chaîne réelle d'une unité d'infanterie : une section qui contient
+// deux groupes de combat.
+const section = await call('POST', `/games/${partie.id}/squads`, chef, {
+  teamId: bleu.id, name: '1re SECTION', echelon: 'section',
+});
+await call('PATCH', `/games/${partie.id}/squads/${section.id}`, chef, {
+  note: '446.03125',
+});
 const alpha = await call('POST', `/games/${partie.id}/squads`, chef, {
-  teamId: bleu.id, name: 'ALPHA',
+  teamId: bleu.id, name: 'ALPHA', echelon: 'groupe', parentSquadId: section.id,
 });
 await call('PATCH', `/games/${partie.id}/squads/${alpha.id}`, chef, {
   note: '446.09375',
 });
 const bravo = await call('POST', `/games/${partie.id}/squads`, chef, {
-  teamId: bleu.id, name: 'BRAVO',
+  teamId: bleu.id, name: 'BRAVO', echelon: 'groupe', parentSquadId: section.id,
 });
 await call('PATCH', `/games/${partie.id}/squads/${bravo.id}`, chef, {
   note: '446.15625',
+});
+// Et une équipe autonome, rattachée directement au commandant : la chaine
+// n’oblige personne a passer par un échelon intermediaire.
+const autonome = await call('POST', `/games/${partie.id}/squads`, chef, {
+  teamId: bleu.id, name: 'RECO', echelon: 'equipe',
 });
 
 // Quatre hommes groupés (le marqueur d'escouade les remplace au dézoom) et
@@ -147,11 +160,14 @@ for (const h of equipe) {
 // Le capitaine reçoit les deux escouades, puis prend un homme sous ses
 // ordres directs — sans lui donner de grade ni l'enfermer dans un groupe.
 const capitaine = jetons.find((j) => j.grade === 'capitaine');
-for (const sq of [alpha, bravo]) {
-  await call('PATCH', `/games/${partie.id}/squads/${sq.id}`, chef, {
-    reportsToMembershipId: capitaine.id,
-  });
-}
+// La section relève du capitaine ; les groupes relèvent de la section.
+// L’équipe de reconnaissance, elle, relève du commandant en direct.
+await call('PATCH', `/games/${partie.id}/squads/${section.id}`, chef, {
+  reportsToMembershipId: capitaine.id,
+});
+await call('PATCH', `/games/${partie.id}/squads/${autonome.id}`, chef, {
+  reportsToMembershipId: moi.membershipId,
+});
 for (const j of jetons.filter((x) => x.sousLesOrdres)) {
   await call(
     'PATCH', `/games/${partie.id}/members/${j.id}/assignment`, chef,

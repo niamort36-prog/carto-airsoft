@@ -13,8 +13,10 @@ import {
   memberships,
   squads,
   teams,
+  UNIT_ECHELONS,
   type Squad,
   type Team,
+  type UnitEchelon,
 } from '../db/schema';
 import { GamesService } from '../games/games.service';
 import { PERMISSIONS } from '../permissions/permissions';
@@ -30,6 +32,10 @@ import type {
 export interface SquadView {
   id: string;
   name: string;
+  /** Ce que l'unité est : groupe, section, compagnie… */
+  echelon: string;
+  /** Unité dont celle-ci fait partie ; null si rattachée à un gradé. */
+  parentSquadId: string | null;
   /** Chef d'escouade, s'il en a un. */
   leaderMembershipId: string | null;
   /** Capitaine ou commandant dont l'escouade dépend. */
@@ -69,6 +75,8 @@ export class TeamsService {
         .map((s) => ({
           id: s.id,
           name: s.name,
+          echelon: s.echelon,
+          parentSquadId: s.parentSquadId,
           leaderMembershipId: s.leaderMembershipId,
           reportsToMembershipId: s.reportsToMembershipId,
           note: s.note,
@@ -130,6 +138,23 @@ export class TeamsService {
       .where(and(eq(teams.id, dto.teamId), eq(teams.gameId, gameId)));
     if (!team) throw new NotFoundException('Équipe introuvable');
 
+    // L'unité parente se valide AVANT l'insertion : l'échelon de l'unité
+    // qu'on crée en dépend, et une transaction à moitié faite ne dirait
+    // rien de clair.
+    let parent: Squad | null = null;
+    if (dto.parentSquadId != null) {
+      parent = await this.assertCanNest(
+        gameId,
+        {
+          id: '00000000-0000-0000-0000-000000000000',
+          teamId: team.id,
+          echelon: dto.echelon ?? 'groupe',
+          parentSquadId: null,
+        } as Squad,
+        dto.parentSquadId,
+      );
+    }
+
     return this.db.transaction(async (tx) => {
       const [squad] = await tx
         .insert(squads)
@@ -137,11 +162,15 @@ export class TeamsService {
           gameId,
           teamId: team.id,
           name: dto.name,
-          // Rattachée d'emblée à celui qui la forme : c'est le cas courant,
-          // et une escouade orpheline ne dit rien à personne.
-          reportsToMembershipId: TeamsService.canCommandSquad(membership.role)
-            ? membership.id
-            : null,
+          echelon: dto.echelon ?? 'groupe',
+          parentSquadId: parent?.id ?? null,
+          // Rattachée d'emblée à celui qui la forme, SAUF si elle entre
+          // dans une unité : elle relève alors de celle-ci, et porter les
+          // deux liens ferait dire deux choses différentes à la carte.
+          reportsToMembershipId:
+            parent == null && TeamsService.canCommandSquad(membership.role)
+              ? membership.id
+              : null,
         })
         .returning();
       await tx.insert(chatChannels).values({
@@ -232,6 +261,36 @@ export class TeamsService {
     const changes: Partial<typeof squads.$inferInsert> = {};
     if (dto.name !== undefined) changes.name = dto.name;
 
+    // L'échelon d'abord : le rattachement se juge sur le NOUVEL échelon,
+    // pas sur l'ancien. Changer les deux d'un coup doit rester cohérent.
+    const echelonVise = dto.echelon ?? squad.echelon;
+    if (dto.echelon !== undefined) changes.echelon = dto.echelon;
+
+    if (dto.parentSquadId !== undefined) {
+      if (dto.parentSquadId === null) {
+        changes.parentSquadId = null;
+      } else {
+        await this.assertCanNest(
+          gameId,
+          { ...squad, echelon: echelonVise },
+          dto.parentSquadId,
+        );
+        changes.parentSquadId = dto.parentSquadId;
+        // Une unité qui entre dans une autre relève d'elle, plus d'un
+        // gradé : garder les deux liens ferait dire deux choses
+        // différentes à l'organigramme.
+        changes.reportsToMembershipId = null;
+      }
+    } else if (dto.echelon !== undefined && squad.parentSquadId != null) {
+      // On change l'échelon sans toucher au parent : le rattachement
+      // existant doit rester valide.
+      await this.assertCanNest(
+        gameId,
+        { ...squad, echelon: echelonVise },
+        squad.parentSquadId,
+      );
+    }
+
     if (dto.leaderMembershipId !== undefined) {
       if (dto.leaderMembershipId === null) {
         changes.leaderMembershipId = null;
@@ -249,6 +308,11 @@ export class TeamsService {
     if (dto.reportsToMembershipId !== undefined) {
       if (dto.reportsToMembershipId === null) {
         changes.reportsToMembershipId = null;
+      } else if (changes.parentSquadId != null) {
+        throw new BadRequestException(
+          'Une unité relève soit d’une unité parente, soit d’un gradé — ' +
+            'pas des deux',
+        );
       } else {
         const superior = await this.memberOfGame(
           gameId,
@@ -268,6 +332,10 @@ export class TeamsService {
           );
         }
         changes.reportsToMembershipId = superior.id;
+        // Symétrique du cas parent : rattacher à un gradé sort l'unité de
+        // son unité parente. Les deux liens ensemble feraient dire deux
+        // choses différentes à l'organigramme.
+        changes.parentSquadId = null;
       }
     }
 
@@ -285,6 +353,8 @@ export class TeamsService {
     return {
       id: updated.id,
       name: updated.name,
+      echelon: updated.echelon,
+      parentSquadId: updated.parentSquadId,
       leaderMembershipId: updated.leaderMembershipId,
       reportsToMembershipId: updated.reportsToMembershipId,
       note: updated.note,
@@ -294,6 +364,70 @@ export class TeamsService {
   /** Seuls ces grades commandent une escouade ou des hommes détachés. */
   private static canCommandSquad(role: string): boolean {
     return role === 'commandant' || role === 'capitaine';
+  }
+
+  /** Rang d'un échelon : l'ordre de `UNIT_ECHELONS` fait la hiérarchie. */
+  private static echelonRank(echelon: string): number {
+    const rang = UNIT_ECHELONS.indexOf(echelon as UnitEchelon);
+    return rang < 0 ? 0 : rang;
+  }
+
+  /**
+   * Vérifie qu'une unité peut entrer dans une autre.
+   *
+   * Trois conditions, et chacune répond à une erreur qu'on ferait sans
+   * elle : le parent doit être du même camp (sinon la chaîne traverse les
+   * lignes), il doit être d'un échelon strictement supérieur (on ne met pas
+   * une section dans un groupe), et il ne doit pas déjà descendre de
+   * l'unité qu'on déplace (sinon la boucle se referme et l'affichage tourne
+   * à l'infini).
+   */
+  private async assertCanNest(
+    gameId: string,
+    unite: Squad,
+    parentId: string,
+  ): Promise<Squad> {
+    if (parentId === unite.id) {
+      throw new BadRequestException('Une unité ne se contient pas elle-même');
+    }
+    const [parent] = await this.db
+      .select()
+      .from(squads)
+      .where(and(eq(squads.id, parentId), eq(squads.gameId, gameId)));
+    if (!parent) throw new NotFoundException('Unité parente introuvable');
+
+    if (parent.teamId !== unite.teamId) {
+      throw new BadRequestException(
+        'Une unité ne se rattache qu’à une unité de son propre camp',
+      );
+    }
+    if (
+      TeamsService.echelonRank(parent.echelon) <=
+      TeamsService.echelonRank(unite.echelon)
+    ) {
+      throw new BadRequestException(
+        'L’unité parente doit être d’un échelon supérieur',
+      );
+    }
+
+    // Remonte la chaîne du parent : si l'unité déplacée s'y trouve, le
+    // rattachement refermerait une boucle.
+    let courant: string | null = parent.parentSquadId;
+    const vus = new Set<string>([parent.id]);
+    while (courant && !vus.has(courant)) {
+      if (courant === unite.id) {
+        throw new BadRequestException(
+          'Ce rattachement refermerait une boucle',
+        );
+      }
+      vus.add(courant);
+      const [suivant] = await this.db
+        .select({ parentSquadId: squads.parentSquadId })
+        .from(squads)
+        .where(eq(squads.id, courant));
+      courant = suivant?.parentSquadId ?? null;
+    }
+    return parent;
   }
 
   /**

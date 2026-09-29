@@ -372,8 +372,29 @@ export class GamesService {
         PERMISSIONS.MEMBERS_PROMOTE,
         'Votre grade ne permet pas de nommer les grades',
       );
-      if (target.id === requester.id || target.role === 'commandant') {
-        throw new ForbiddenException('Le commandant ne peut pas être rétrogradé');
+      if (target.id === requester.id) {
+        throw new ForbiddenException('On ne change pas son propre grade');
+      }
+      // Rétrograder le DERNIER commandant laisserait la partie sans
+      // arbitre : plus personne ne pourrait nommer, ni même réparer
+      // l'erreur.
+      if (target.role === 'commandant' && dto.role !== 'commandant') {
+        const commandants = await this.db
+          .select({ id: memberships.id })
+          .from(memberships)
+          .where(
+            and(
+              eq(memberships.gameId, gameId),
+              eq(memberships.role, 'commandant'),
+              isNull(memberships.leftAt),
+              isNull(memberships.kickedAt),
+            ),
+          );
+        if (commandants.length <= 1) {
+          throw new ForbiddenException(
+            'La partie ne peut pas rester sans commandant',
+          );
+        }
       }
       // Même avec la permission, on ne nomme pas au-dessus de son propre
       // grade : la matrice ouvre la capacité, la hiérarchie en borne la portée.
@@ -500,7 +521,13 @@ export class GamesService {
       .where(eq(memberships.gameId, gameId));
     await tx
       .update(squads)
-      .set({ leaderMembershipId: null, reportsToMembershipId: null })
+      .set({
+        leaderMembershipId: null,
+        reportsToMembershipId: null,
+        // Les unités s'emboîtent : sans casser ce lien, une suppression
+        // en bloc butera sur sa propre clé étrangère.
+        parentSquadId: null,
+      })
       .where(eq(squads.gameId, gameId));
     // Les escouades pointent vers des membres : elles partent en premier.
     await tx.delete(squads).where(eq(squads.gameId, gameId));

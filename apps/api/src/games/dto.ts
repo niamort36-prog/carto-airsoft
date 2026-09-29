@@ -23,8 +23,14 @@ export const ROLE_RANK: Record<string, number> = {
   joueur: 3,
 };
 
-/** Grades attribuables par le commandant (le grade de commandant ne se donne pas). */
+/**
+ * Grades attribuables. Le commandant en fait partie : une grosse partie
+ * peut en compter plusieurs, chacun avec ses unités. Ce qui reste interdit
+ * est de se nommer soi-même, de nommer au-dessus de son propre grade, et
+ * de rétrograder le dernier commandant.
+ */
 export const ASSIGNABLE_ROLES = [
+  'commandant',
   'capitaine',
   'chef_escouade',
   'joueur',

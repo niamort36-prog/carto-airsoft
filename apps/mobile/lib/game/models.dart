@@ -62,6 +62,8 @@ class SquadSummary {
     this.leaderMembershipId,
     this.reportsToMembershipId,
     this.note,
+    this.echelon = 'groupe',
+    this.parentSquadId,
   });
 
   final String id;
@@ -76,6 +78,15 @@ class SquadSummary {
 
   /// Étiquette libre du groupe (fréquence radio du réseau, indicatif).
   final String? note;
+
+  /// Ce que l'unité EST : équipe, groupe, section, compagnie… Déclaré et
+  /// non déduit de l'effectif — une section reste une section le jour où
+  /// il n'y a que six hommes présents.
+  final String echelon;
+
+  /// Unité dont celle-ci fait partie. Nulle quand elle relève directement
+  /// d'un gradé.
+  final String? parentSquadId;
 }
 
 abstract final class Perm {

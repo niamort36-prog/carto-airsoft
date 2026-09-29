@@ -147,12 +147,19 @@ class GamesApi {
   static Future<SquadSummary> createSquad(
     String gameId,
     String teamId,
-    String name,
-  ) async {
+    String name, {
+    String echelon = 'groupe',
+    String? parentSquadId,
+  }) async {
     final res = await http.post(
       _uri('/games/$gameId/squads'),
       headers: _headers(),
-      body: jsonEncode({'teamId': teamId, 'name': name}),
+      body: jsonEncode({
+        'teamId': teamId,
+        'name': name,
+        'echelon': echelon,
+        'parentSquadId': ?parentSquadId,
+      }),
     );
     _ensureOk(res);
     final body = jsonDecode(res.body) as Map<String, dynamic>;
@@ -163,6 +170,8 @@ class GamesApi {
       leaderMembershipId: body['leaderMembershipId'] as String?,
       reportsToMembershipId: body['reportsToMembershipId'] as String?,
       note: body['note'] as String?,
+      echelon: body['echelon'] as String? ?? 'groupe',
+      parentSquadId: body['parentSquadId'] as String?,
     );
   }
 
@@ -172,10 +181,19 @@ class GamesApi {
     String gameId,
     String squadId, {
     String? name,
+    String? echelon,
     Object? note = _absent,
+    Object? parentSquadId = _absent,
+    Object? reportsToMembershipId = _absent,
   }) async {
-    final body = <String, dynamic>{'name': ?name};
+    final body = <String, dynamic>{'name': ?name, 'echelon': ?echelon};
     if (!identical(note, _absent)) body['note'] = note;
+    if (!identical(parentSquadId, _absent)) {
+      body['parentSquadId'] = parentSquadId;
+    }
+    if (!identical(reportsToMembershipId, _absent)) {
+      body['reportsToMembershipId'] = reportsToMembershipId;
+    }
     final res = await http.patch(
       _uri('/games/$gameId/squads/$squadId'),
       headers: _headers(),
@@ -210,6 +228,9 @@ class GamesApi {
   /// Sentinelle « champ non fourni » — distincte de `null`, qui veut dire
   /// « retirer le rattachement ».
   static const _absent = Object();
+
+  /// La même sentinelle, pour les appelants qui composent leurs arguments.
+  static const absent = _absent;
 
   /// Organisation de la partie : équipes et escouades (§4). Sert à grouper
   /// les alliés et à nommer les rattachements.
@@ -249,6 +270,8 @@ class GamesApi {
           leaderMembershipId: squad['leaderMembershipId'] as String?,
           reportsToMembershipId: squad['reportsToMembershipId'] as String?,
           note: note.isEmpty ? null : note,
+          echelon: squad['echelon'] as String? ?? 'groupe',
+          parentSquadId: squad['parentSquadId'] as String?,
         ));
       }
     }

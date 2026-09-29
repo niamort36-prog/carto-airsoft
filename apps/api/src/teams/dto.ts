@@ -1,12 +1,15 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsHexColor,
+  IsIn,
   IsOptional,
   IsString,
   IsUUID,
   Length,
   ValidateIf,
 } from 'class-validator';
+
+import { UNIT_ECHELONS } from '../db/schema';
 
 export class CreateTeamDto {
   @ApiProperty({ example: 'Bleu', minLength: 1, maxLength: 40 })
@@ -29,10 +32,44 @@ export class CreateSquadDto {
   @IsString()
   @Length(1, 40)
   name!: string;
+
+  @ApiPropertyOptional({
+    enum: UNIT_ECHELONS,
+    default: 'groupe',
+    description: 'Ce que l’unité EST : groupe, section, compagnie…',
+  })
+  @IsOptional()
+  @IsIn(UNIT_ECHELONS)
+  echelon?: (typeof UNIT_ECHELONS)[number];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Unité dont celle-ci fait partie. Absent pour une unité rattachée ' +
+      'directement à un gradé.',
+  })
+  @IsOptional()
+  @IsUUID()
+  parentSquadId?: string;
 }
 
-/** Modification d'une escouade : nom, chef, rattachement. */
+/** Modification d'une unité : nom, échelon, chef, rattachements. */
 export class UpdateSquadDto {
+  @ApiPropertyOptional({ enum: UNIT_ECHELONS })
+  @IsOptional()
+  @IsIn(UNIT_ECHELONS)
+  echelon?: (typeof UNIT_ECHELONS)[number];
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    nullable: true,
+    description:
+      'Unité parente ; null pour la détacher et la rattacher à un gradé',
+  })
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsUUID()
+  parentSquadId?: string | null;
   @ApiPropertyOptional({ example: 'Alpha', minLength: 1, maxLength: 40 })
   @IsOptional()
   @IsString()

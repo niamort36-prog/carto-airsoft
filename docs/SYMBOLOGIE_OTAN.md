@@ -44,6 +44,31 @@ distingue : le **double point** (groupe *avec* mitrailleuses — c'est un
 armement, pas un effectif) et le **quadruple point** (Staffel, propre à
 l'armée allemande).
 
+## Les unites s emboitent
+
+Une unite declare son echelon et peut en contenir d autres, a condition
+qu elles soient d un echelon STRICTEMENT inferieur : une compagnie contient
+des sections, une section des groupes, un groupe des equipes. On ne met pas
+une section dans un groupe.
+
+Une unite releve soit d une unite parente, soit d un grade en direct —
+jamais des deux, sinon l organigramme dirait deux choses differentes. Cela
+laisse ouverte la possibilite qu un groupe depende directement d un
+commandant, sans section au-dessus.
+
+L echelon est DECLARE, pas deduit de l effectif : une section reste une
+section le jour ou six hommes seulement sont presents. L effectif ne sert
+plus qu a suggerer un echelon a la creation.
+
+Une partie peut compter plusieurs commandants, chacun avec ses unites.
+Quand il y en a plusieurs, une unite que rien ne rattache devient un sommet
+a part entiere plutot que d etre accrochee au premier venu : inventer une
+subordination que personne n a donnee serait pire que de la montrer absente.
+Le dernier commandant ne peut pas etre retrograde — la partie perdrait son
+arbitre.
+
+Tout cela se lit et se modifie depuis l organigramme du panneau des allies.
+
 ## Deux contraintes de mise en œuvre
 
 **Les textes sont peints DANS l'image du symbole**, jamais posés par une

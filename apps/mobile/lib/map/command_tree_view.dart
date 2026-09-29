@@ -21,6 +21,7 @@ class CommandTreeView extends StatelessWidget {
     required this.tree,
     required this.myMembershipId,
     this.onTapMember,
+    this.onTapSquad,
   });
 
   final CommandTree tree;
@@ -28,6 +29,11 @@ class CommandTreeView extends StatelessWidget {
 
   /// Appelé quand on touche un homme — pour le montrer sur la carte.
   final void Function(MemberView)? onTapMember;
+
+  /// Appelé quand on touche une unité — pour la réorganiser. L'arbre est
+  /// l'endroit où l'on LIT la structure : c'est donc l'endroit naturel
+  /// pour la modifier.
+  final void Function(CommandNode)? onTapSquad;
 
   static const double _colonne = 20;
   static const double _hauteurLigne = 46;
@@ -112,6 +118,7 @@ class CommandTreeView extends StatelessWidget {
     if (noeud.isSquad) {
       final effectif = noeud.children.length;
       return InkWell(
+        onTap: onTapSquad == null ? null : () => onTapSquad!(noeud),
         child: Row(
           children: [
             Icon(Icons.groups, size: 26, color: theme.colorScheme.primary),
@@ -131,9 +138,12 @@ class CommandTreeView extends StatelessWidget {
                   ),
                   Text(
                     [
-                      '$effectif ${effectif > 1 ? 'hommes' : 'homme'}',
-                      if (SymbolEchelon.forHeadcount(effectif) != null)
-                        SymbolEchelon.forHeadcount(effectif)!.label,
+                      // L'échelon DÉCLARÉ, pas celui que l'effectif du
+                      // moment laisserait deviner : une section reste une
+                      // section le jour où six hommes sont là.
+                      SymbolEchelon.fromWire(noeud.echelon).label,
+                      if (effectif > 0)
+                        '$effectif ${effectif > 1 ? 'éléments' : 'élément'}',
                       if ((noeud.squadNote ?? '').isNotEmpty) noeud.squadNote!,
                     ].join(' · '),
                     style: theme.textTheme.bodySmall,

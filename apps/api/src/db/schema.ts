@@ -202,7 +202,32 @@ export const teams = pgTable('teams', {
 
 export type Team = typeof teams.$inferSelect;
 
-/** Escouades (§5) : subdivisions d'une équipe, menées par un chef. */
+/**
+ * Échelons OTAN, du plus petit au plus grand. L'ordre de ce tableau EST la
+ * hiérarchie : une unité ne peut contenir qu'un échelon strictement
+ * inférieur au sien — on ne met pas une section dans un groupe.
+ */
+export const UNIT_ECHELONS = [
+  'equipe',
+  'groupe',
+  'section',
+  'compagnie',
+  'bataillon',
+  'regiment',
+  'brigade',
+  'division',
+  'corps',
+  'armee',
+] as const;
+export type UnitEchelon = (typeof UNIT_ECHELONS)[number];
+
+/**
+ * Unités d'une équipe (§5) : groupes de combat, sections, compagnies.
+ *
+ * La table s'appelle encore `squads` pour ne pas casser l'existant, mais
+ * elle porte désormais des unités de tout échelon, emboîtées les unes dans
+ * les autres.
+ */
 export const squads = pgTable('squads', {
   id: uuid('id').primaryKey().defaultRandom(),
   teamId: uuid('team_id')
@@ -226,6 +251,26 @@ export const squads = pgTable('squads', {
   reportsToMembershipId: uuid('reports_to_membership_id').references(
     (): AnyPgColumn => memberships.id,
   ),
+
+  /**
+   * Unité dont celle-ci fait partie : le groupe est dans la section, la
+   * section dans la compagnie.
+   *
+   * Nul quand l'unité est rattachée directement à un gradé (voir
+   * `reportsToMembershipId`) — une escouade peut très bien relever du
+   * commandant sans échelon intermédiaire.
+   */
+  parentSquadId: uuid('parent_squad_id').references(
+    (): AnyPgColumn => squads.id,
+  ),
+
+  /**
+   * Ce que cette unité EST. Déclaré et non déduit de l'effectif : une
+   * section reste une section le jour où il n'y a que six hommes présents.
+   */
+  echelon: text('echelon', { enum: UNIT_ECHELONS })
+    .notNull()
+    .default('groupe'),
 
   /** Étiquette libre du groupe (fréquence radio du réseau, indicatif). */
   note: text('note'),
