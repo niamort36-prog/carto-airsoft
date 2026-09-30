@@ -3,6 +3,10 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // GitHub Pages sert la console sous un sous-chemin, pas à la racine du
+  // domaine. Sans `base`, la page se charge et reste blanche : elle cherche
+  // ses fichiers un cran trop haut.
+  base: process.env.CONSOLE_BASE ?? '/',
   plugins: [react()],
   server: {
     port: 5173,

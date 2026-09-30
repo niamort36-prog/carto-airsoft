@@ -1,4 +1,10 @@
-# Publie l'application navigateur sur GitHub Pages.
+# Publie les DEUX sites sur GitHub Pages, sous une même adresse :
+#
+#   /<depot>/           l'application, copie de celle du terrain
+#   /<depot>/console/   la console de préparation
+#
+# Pages ne sert qu'un site par dépôt ; on les assemble donc en un seul
+# dossier plutôt que d'ouvrir un second dépôt qui divergerait.
 #
 # But : pouvoir l'essayer depuis n'importe quel appareil sans rien
 # installer. Ce n'est PAS un déploiement de production — voir la limite
@@ -45,6 +51,20 @@ jobs:
       url: ${{ steps.deploiement.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+
+      # --- La console (React) -------------------------------------------
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Construire la console
+        run: npm run build --workspace apps/console
+        env:
+          CONSOLE_BASE: /${{ github.event.repository.name }}/console/
+          VITE_API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+      # --- L'application (Flutter) --------------------------------------
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
@@ -73,6 +93,14 @@ jobs:
         run: cp build/web/index.html build/web/404.html
         working-directory: apps/mobile
 
+      # La console vient se loger DANS le site de l'application : un seul
+      # artefact, une seule publication, deux adresses.
+      - name: Assembler les deux sites
+        run: |
+          set -e
+          cp -r apps/console/dist apps/mobile/build/web/console
+          test -f apps/mobile/build/web/console/index.html
+
       - name: Vérifier ce dont la version navigateur dépend
         run: |
           set -e
@@ -82,6 +110,8 @@ jobs:
           done
           grep -q 'maplibre-gl' build/web/index.html \
             || { echo "::error::maplibre-gl absent d'index.html — pas de carte"; exit 1; }
+          test -f build/web/console/index.html || {
+            echo "::error::console absente du site assemblé"; exit 1; }
           echo "Fichiers attendus présents."
         working-directory: apps/mobile
 

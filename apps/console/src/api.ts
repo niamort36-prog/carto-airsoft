@@ -4,12 +4,36 @@ import { createClient } from '@supabase/supabase-js';
  * La console est « un client parmi d'autres » (§2.2) : elle ne touche jamais
  * la base, tout passe par la même API que l'app mobile.
  */
-export const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY,
-);
+// Valeurs de repli identiques à celles de l'application mobile. Elles sont
+// PUBLIQUES par conception — une clé « publishable » part dans le bundle du
+// navigateur, c'est son rôle. Sans ce repli, un déploiement sans variables
+// d'environnement planterait au chargement au lieu d'afficher l'écran de
+// connexion.
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL ??
+  'https://rcgrwhayagadsaqnjufj.supabase.co';
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ??
+  'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb';
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/v1';
+
+/**
+ * Vrai quand la page est servie en HTTPS mais vise une API en HTTP clair.
+ * Le navigateur bloque alors TOUS les appels — c'est le piège du site publié
+ * pointant vers un serveur local, et il ressemble à une panne réseau.
+ */
+export const isMixedContent =
+  typeof location !== 'undefined' &&
+  location.protocol === 'https:' &&
+  API.startsWith('http://');
+
+export const MIXED_CONTENT_HINT =
+  'Cette page est servie en HTTPS et ne peut pas appeler un serveur en ' +
+  'HTTP. Exposez l’API en HTTPS (cloudflared tunnel --url ' +
+  'http://localhost:3000) et reconstruisez le site avec VITE_API_BASE_URL.';
 
 export class ApiError extends Error {
   constructor(
