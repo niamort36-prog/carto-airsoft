@@ -127,6 +127,13 @@
       "when": 1790721868386,
       "tag": "0017_melted_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1790790512260,
+      "tag": "0018_lethal_menace",
+      "breakpoints": true
     }
   ]
 }

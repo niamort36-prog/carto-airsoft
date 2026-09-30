@@ -15,6 +15,7 @@ import { MapStylesModule } from './map-styles/map-styles.module';
 import { ObjectivesModule } from './objectives/objectives.module';
 import { PermissionsApiModule } from './permissions/permissions-api.module';
 import { PermissionsModule } from './permissions/permissions.module';
+import { PreparedMapsModule } from './prepared-maps/prepared-maps.module';
 import { PublicApiModule } from './public-api/public-api.module';
 import { PerksModule } from './perks/perks.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -43,6 +44,7 @@ import { UsersModule } from './users/users.module';
     MapStylesModule,
     ObjectivesModule,
     PermissionsModule,
+    PreparedMapsModule,
     PermissionsApiModule,
     PerksModule,
     PublicApiModule,

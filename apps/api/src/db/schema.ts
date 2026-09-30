@@ -1,6 +1,7 @@
 import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import {
   boolean,
+  doublePrecision,
   geometry,
   index,
   integer,
@@ -45,6 +46,19 @@ export const games = pgTable('games', {
   startsAt: timestamp('starts_at', { withTimezone: true }),
   endsAt: timestamp('ends_at', { withTimezone: true }),
   settings: jsonb('settings').notNull().default({}),
+
+  /**
+   * Carte préparée dont cette partie est issue, pour mémoire.
+   *
+   * Le contenu a été RECOPIÉ au moment de l'association : ce lien ne sert
+   * qu'à dire d'où l'on vient. Modifier la carte ensuite ne touche pas aux
+   * parties déjà lancées — une partie en cours ne doit jamais changer sous
+   * les pieds de ceux qui la jouent.
+   */
+  preparedMapId: uuid('prepared_map_id').references(
+    (): AnyPgColumn => preparedMaps.id,
+  ),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -138,6 +152,47 @@ export type Membership = typeof memberships.$inferSelect;
  *     résolution de conflit « le dernier qui synchronise gagne » ;
  *     `deletedAt` = tombstone, jamais de suppression physique.
  */
+/**
+ * Cartes préparées : un terrain dessiné UNE FOIS, réutilisable d'une partie
+ * à l'autre.
+ *
+ * Distinct des objets de carte, qui appartiennent à une partie et meurent
+ * avec elle. Un club joue vingt fois sur le même terrain ; redessiner les
+ * limites, les zones et les drapeaux à chaque fois serait absurde.
+ *
+ * Le contenu est un bloc JSON et non des lignes dans `map_objects` : une
+ * carte préparée n'est pas jouée, elle est un MODÈLE. L'associer à une
+ * partie en recopie le contenu, de sorte que ce qui se passe en partie
+ * n'abîme jamais le modèle.
+ */
+export const preparedMaps = pgTable('prepared_maps', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  ownerUserId: uuid('owner_user_id')
+    .notNull()
+    .references(() => users.id),
+  name: text('name').notNull(),
+
+  /** Fond de carte par défaut : `osm`, `plan_ign`, `ortho_ign`, `relief`. */
+  basemap: text('basemap').notNull().default('plan_ign'),
+
+  /** Où rouvrir la carte : on revient là où on l'a laissée. */
+  centerLat: doublePrecision('center_lat'),
+  centerLng: doublePrecision('center_lng'),
+  zoom: doublePrecision('zoom'),
+
+  /** `{ objects: [...], objectives: [...] }` — dessins et drapeaux. */
+  content: jsonb('content').notNull().default({}),
+
+  createdAt: timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type PreparedMap = typeof preparedMaps.$inferSelect;
+
 export const mapObjects = pgTable(
   'map_objects',
   {
