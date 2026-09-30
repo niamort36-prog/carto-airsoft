@@ -9,7 +9,14 @@ import { io } from 'socket.io-client';
 const SUPABASE = 'https://rcgrwhayagadsaqnjufj.supabase.co';
 const KEY = 'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb';
 const API = 'http://localhost:3000/v1';
-const PASSWORD = 'TestE2E2026';
+const PASSWORD = process.env.E2E_PASSWORD;
+if (!PASSWORD) {
+  throw new Error(
+    'E2E_PASSWORD manquant. Ces scripts ouvrent de vrais comptes sur le ' +
+      'projet Supabase de test : le mot de passe ne vit pas dans le dépôt. ' +
+      'Voir README, section « Tests E2E ».',
+  );
+}
 
 const login = async (email) => {
   const body = JSON.stringify({ email, password: PASSWORD });

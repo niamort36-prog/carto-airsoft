@@ -1,0 +1,97 @@
+# Publie l'application navigateur sur GitHub Pages.
+#
+# But : pouvoir l'essayer depuis n'importe quel appareil sans rien
+# installer. Ce n'est PAS un déploiement de production — voir la limite
+# expliquée plus bas.
+#
+# ⚠️ Pages sert en HTTPS. Un navigateur refuse qu'une page HTTPS appelle une
+# API en HTTP : le site se chargera, la connexion Supabase (HTTPS) passera,
+# mais tous les appels à l'API arbitre échoueront tant qu'elle n'est pas
+# joignable elle aussi en HTTPS. Deux façons de s'en sortir :
+#
+#   1. Exposer l'API derrière un tunnel HTTPS, puis saisir son adresse dans
+#      l'application (bouton « Adresse du serveur », écran de connexion) :
+#          cloudflared tunnel --url http://localhost:3000
+#   2. Ou renseigner la variable de dépôt `API_BASE_URL` (Settings →
+#      Secrets and variables → Actions → Variables) pour la figer ici.
+name: Pages
+
+on:
+  push:
+    branches: [main, phase-1-socle]
+  workflow_dispatch:
+
+# Ce que la publication exige, et rien de plus.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Une seule publication à la fois ; une poussée en cours n'est pas annulée,
+# sans quoi le site pourrait rester à moitié remplacé.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+env:
+  FLUTTER_VERSION: '3.44.7'
+
+jobs:
+  publier:
+    name: Construire et publier
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: apps/mobile
+
+      # Pages sert le site sous /<nom-du-depot>/ et non à la racine du
+      # domaine. Sans `--base-href`, la page se charge et reste blanche :
+      # elle cherche ses fichiers un cran trop haut.
+      - name: Construire
+        run: |
+          set -e
+          flutter build web --release \
+            --base-href="/${{ github.event.repository.name }}/" \
+            ${API_DEFINE}
+        working-directory: apps/mobile
+        env:
+          API_DEFINE: ${{ vars.API_BASE_URL && format('--dart-define=API_BASE_URL={0}', vars.API_BASE_URL) || '' }}
+
+      # GitHub Pages n'a pas de règle de réécriture : une URL profonde
+      # renverrait un 404. Le même fichier servi en 404 fait office de
+      # repli — c'est la convention des sites à navigation interne.
+      - name: Replier les routes sur l'application
+        run: cp build/web/index.html build/web/404.html
+        working-directory: apps/mobile
+
+      - name: Vérifier ce dont la version navigateur dépend
+        run: |
+          set -e
+          for f in sqlite3.wasm drift_worker.js; do
+            test -f "build/web/$f" \
+              || { echo "::error::$f absent — la base locale échouera"; exit 1; }
+          done
+          grep -q 'maplibre-gl' build/web/index.html \
+            || { echo "::error::maplibre-gl absent d'index.html — pas de carte"; exit 1; }
+          echo "Fichiers attendus présents."
+        working-directory: apps/mobile
+
+      # `enablement` active Pages au premier passage : sans cela il
+      # faudrait d'abord le faire à la main dans les réglages du dépôt.
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/mobile/build/web
+      - id: deploiement
+        uses: actions/deploy-pages@v4

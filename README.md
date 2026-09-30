@@ -41,6 +41,18 @@ npm run api:dev
 npm run api:test
 ```
 
+### Tests E2E
+
+Ces scripts ouvrent de **vrais comptes** sur le projet Supabase de test. Le
+mot de passe ne vit pas dans le dépôt — il se passe par l'environnement :
+
+```bash
+export E2E_PASSWORD=...        # PowerShell : $env:E2E_PASSWORD = '...'
+```
+
+Sans lui, chaque script s'arrête sur un message explicite plutôt que de
+tenter une connexion avec un mot de passe deviné.
+
 Tests de bout en bout (API démarrée + base up) :
 
 ```bash

@@ -6,7 +6,14 @@ const SUPABASE = process.env.SUPABASE_URL ?? 'https://rcgrwhayagadsaqnjufj.supab
 const KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb';
 const API = process.env.API_BASE_URL ?? 'http://localhost:3000/v1';
 // Comptes de test jetables ; surchargeables par variables d'environnement.
-const PASSWORD = process.env.E2E_PASSWORD ?? 'TestE2E2026';
+const PASSWORD = process.env.E2E_PASSWORD;
+if (!PASSWORD) {
+  throw new Error(
+    'E2E_PASSWORD manquant. Ces scripts ouvrent de vrais comptes sur le ' +
+      'projet Supabase de test : le mot de passe ne vit pas dans le dépôt. ' +
+      'Voir README, section « Tests E2E ».',
+  );
+}
 const OWNER_EMAIL = process.env.E2E_EMAIL ?? 'test.e2e@cartoairsoft.dev';
 const PLAYER_EMAIL = process.env.E2E_EMAIL2 ?? 'test.e2e2@cartoairsoft.dev';
 

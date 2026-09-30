@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/invitespanel.tsx","./src/login.tsx","./src/permissionspanel.tsx","./src/prepmap.tsx","./src/replay.tsx","./src/api.ts","./src/main.tsx","./src/replay-timeline.test.ts","./src/replay-timeline.ts","./src/vite-env.d.ts"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/invitespanel.tsx","./src/login.tsx","./src/permissionspanel.tsx","./src/prepmap.tsx","./src/replay.tsx","./src/api.ts","./src/icons.ts","./src/main.tsx","./src/replay-timeline.test.ts","./src/replay-timeline.ts","./src/vite-env.d.ts"],"version":"5.9.3"}

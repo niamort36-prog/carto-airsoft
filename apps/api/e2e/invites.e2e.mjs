@@ -6,7 +6,14 @@ import { createHash } from 'node:crypto';
 const SUPABASE = process.env.SUPABASE_URL ?? 'https://rcgrwhayagadsaqnjufj.supabase.co';
 const KEY = process.env.SUPABASE_ANON_KEY ?? 'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb';
 const API = process.env.API_BASE_URL ?? 'http://localhost:3000/v1';
-const PASSWORD = process.env.E2E_PASSWORD ?? 'TestE2E2026';
+const PASSWORD = process.env.E2E_PASSWORD;
+if (!PASSWORD) {
+  throw new Error(
+    'E2E_PASSWORD manquant. Ces scripts ouvrent de vrais comptes sur le ' +
+      'projet Supabase de test : le mot de passe ne vit pas dans le dépôt. ' +
+      'Voir README, section « Tests E2E ».',
+  );
+}
 
 async function token(email) {
   const body = JSON.stringify({ email, password: PASSWORD });

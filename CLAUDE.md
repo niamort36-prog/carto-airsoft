@@ -62,6 +62,11 @@ npm run test --workspace apps/console      # vitest
 Jest. Ils exigent Docker + l'API lancée, et créent de vrais comptes sur le
 projet Supabase de test.
 
+Le mot de passe de ces comptes ne vit **pas** dans le dépôt : il vient de
+`E2E_PASSWORD`. Sans cette variable, chaque script s'arrête sur un message
+explicite. Préfixer les commandes :
+`E2E_PASSWORD=... node apps/api/e2e/...`
+
 ```bash
 node apps/api/e2e/unit-nesting.e2e.mjs
 node apps/api/e2e/demo-terrain.mjs "Nom de partie"   # partie peuplée, pour regarder la carte
