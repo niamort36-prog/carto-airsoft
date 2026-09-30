@@ -2,6 +2,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../app_config.dart';
 import '../db/local_db.dart';
 import '../map/map_screen.dart';
 import '../serveur_dialog.dart';
@@ -72,50 +73,73 @@ class _GamesScreenState extends State<GamesScreen> {
   Future<void> _createGame() async {
     // Une seule partie créée à la fois : la nouvelle efface la précédente
     // avec tout son contenu. On prévient avant, pas après.
-    final existante = (await _games)
-        .where((g) => g.role == 'commandant')
-        .firstOrNull;
+    // Cette liste ne sert qu'à PRÉVENIR qu'une partie existante sera
+    // remplacée. Quand elle est indisponible — API injoignable et cache
+    // vide — ce n'est pas une raison de bloquer la création : le serveur
+    // reste l'arbitre et tranchera.
+    //
+    // Sans ce filet, `await` relançait l'erreur du chargement AVANT
+    // d'ouvrir la boîte de dialogue. L'exception remontait dans le vide
+    // (le bouton appelle cette méthode sans l'attendre) et le geste
+    // restait sans effet visible : ni fenêtre, ni message.
+    GameSummary? existante;
+    try {
+      existante = (await _games)
+          .where((g) => g.role == 'commandant')
+          .firstOrNull;
+    } catch (_) {
+      existante = null;
+    }
 
     final controller = TextEditingController();
     if (!mounted) return;
     final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Nouvelle partie'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (existante != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  '« ${existante.name} » sera définitivement supprimée, '
-                  'avec ses marqueurs, messages et invitations.',
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Nouvelle partie'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (existante != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(
+                    '« ${existante.name} » sera définitivement supprimée, '
+                    'avec ses marqueurs, messages et invitations.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
                   ),
                 ),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                // Le bouton s'active à la saisie : sans cela, valider un nom
+                // trop court refermait la fenêtre sans rien faire ni rien
+                // dire, et le geste semblait ignoré.
+                onChanged: (_) => setDialogState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Nom de la partie',
+                  hintText: 'Op Fontainebleau',
+                  helperText: 'Trois caractères au minimum',
+                ),
               ),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              decoration: const InputDecoration(
-                labelText: 'Nom de la partie',
-                hintText: 'Op Fontainebleau',
-              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: controller.text.trim().length < 3
+                  ? null
+                  : () => Navigator.pop(context, controller.text.trim()),
+              child: Text(existante != null ? 'Remplacer' : 'Créer'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text(existante != null ? 'Remplacer' : 'Créer'),
-          ),
-        ],
       ),
     );
     if (name == null || name.length < 3) return;
@@ -143,9 +167,7 @@ class _GamesScreenState extends State<GamesScreen> {
             ListTile(
               leading: const Icon(Icons.qr_code_scanner, size: 32),
               title: const Text('Scanner un QR'),
-              subtitle: const Text(
-                'Invitation, drapeau à capturer ou bonus',
-              ),
+              subtitle: const Text('Invitation, drapeau à capturer ou bonus'),
               onTap: () => Navigator.pop(sheetContext, false),
             ),
             ListTile(
@@ -171,9 +193,9 @@ class _GamesScreenState extends State<GamesScreen> {
   /// C'est le serveur qui reconnaît la nature du code et arbitre (§7.2,
   /// §7.8, §7.9) — l'app se contente d'annoncer le résultat.
   Future<void> _joinByScan() async {
-    final outcome = await Navigator.of(context).push<ScanOutcome>(
-      MaterialPageRoute(builder: (_) => const ScanScreen()),
-    );
+    final outcome = await Navigator.of(
+      context,
+    ).push<ScanOutcome>(MaterialPageRoute(builder: (_) => const ScanScreen()));
     if (outcome == null) return;
     _announce(outcome);
   }
@@ -221,12 +243,8 @@ class _GamesScreenState extends State<GamesScreen> {
 
     // On montre ce à quoi le code engage AVANT d'inscrire : se tromper de
     // caractère et se retrouver chez l'adversaire serait pénible à défaire.
-    final ({
-      String gameName,
-      String role,
-      String? teamName,
-      String? squadName,
-    }) apercu;
+    final ({String gameName, String role, String? teamName, String? squadName})
+    apercu;
     try {
       apercu = await GamesApi.previewInvite(code.trim());
     } catch (e) {
@@ -279,16 +297,23 @@ class _GamesScreenState extends State<GamesScreen> {
       BonusRedeemed(:final name, :final pointsAwarded) =>
         '$name récupéré ! +$pointsAwarded pts',
     };
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _showError(Object e) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(e.toString()),
+        // Sur une page HTTPS visant une API en clair, l'erreur brute ne dit
+        // rien d'utile : le navigateur a refusé l'appel avant qu'il parte.
+        content: Text(
+          AppConfig.isMixedContent ? AppConfig.mixedContentHint : e.toString(),
+        ),
+        duration: AppConfig.isMixedContent
+            ? const Duration(seconds: 12)
+            : const Duration(seconds: 4),
         backgroundColor: Theme.of(context).colorScheme.error,
       ),
     );
@@ -352,15 +377,34 @@ class _GamesScreenState extends State<GamesScreen> {
                       children: [
                         const Icon(Icons.cloud_off, size: 48),
                         const SizedBox(height: 8),
-                        const Text(
-                          'Impossible de joindre le serveur.\n'
-                          'Vos parties réapparaîtront au retour du réseau.',
+                        Text(
+                          // Le blocage « contenu mixte » ressemble à une
+                          // panne réseau alors que rien n'est en panne.
+                          // Le dire évite de chercher du côté du serveur.
+                          AppConfig.isMixedContent
+                              ? AppConfig.mixedContentHint
+                              : 'Impossible de joindre le serveur.\n'
+                                    'Vos parties réapparaîtront au retour du '
+                                    'réseau.',
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 8),
-                        TextButton(
-                          onPressed: _reload,
-                          child: const Text('Réessayer'),
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          children: [
+                            TextButton(
+                              onPressed: _reload,
+                              child: const Text('Réessayer'),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                if (await demanderUrlServeur(context)) {
+                                  _reload();
+                                }
+                              },
+                              child: const Text('Adresse du serveur'),
+                            ),
+                          ],
                         ),
                       ],
                     ),
@@ -393,7 +437,9 @@ class _GamesScreenState extends State<GamesScreen> {
                   return Container(
                     color: Colors.orange.shade900,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
                     child: const Text(
                       'Hors ligne — liste en cache',
                       textAlign: TextAlign.center,

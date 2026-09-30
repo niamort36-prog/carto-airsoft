@@ -91,5 +91,24 @@ class AppConfig {
     return 'http://localhost:3000/v1';
   }
 
+  /// Vrai quand la page est servie en HTTPS mais que l'API visée est en
+  /// HTTP clair.
+  ///
+  /// Le navigateur bloque alors TOUS les appels, et l'application ne peut
+  /// pas distinguer ce blocage d'une panne réseau : elle dirait « hors
+  /// ligne » sans que rien ne soit hors ligne. C'est le piège exact du
+  /// site publié sur GitHub Pages pointant vers un serveur local.
+  static bool get isMixedContent =>
+      kIsWeb &&
+      Uri.base.scheme == 'https' &&
+      apiBaseUrl.startsWith('http://');
+
+  /// Ce qu'il faut faire, quand c'est ce piège-là.
+  static const mixedContentHint =
+      'Cette page est servie en HTTPS et ne peut pas appeler un serveur en '
+      'HTTP. Exposez l’API en HTTPS (cloudflared tunnel --url '
+      'http://localhost:3000) puis collez l’adresse obtenue dans « Adresse '
+      'du serveur ».';
+
   static bool get isAuthConfigured => supabaseAnonKey.isNotEmpty;
 }
