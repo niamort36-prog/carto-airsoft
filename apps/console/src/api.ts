@@ -77,6 +77,8 @@ export interface Game {
   id: string;
   name: string;
   status: string;
+  /** Carte préparée dont la partie est issue, pour mémoire. */
+  preparedMapId?: string | null;
 }
 
 export interface GameEntry {
@@ -117,6 +119,43 @@ export interface Invite {
   active: boolean;
   token?: string;
   url?: string;
+}
+
+/** Fonds de carte servis par l'API. */
+export const BASEMAPS = [
+  { key: 'ortho_ign', label: 'Satellite' },
+  { key: 'plan_ign', label: 'Plan IGN' },
+  { key: 'osm', label: 'OpenStreetMap' },
+  { key: 'relief', label: 'Relief' },
+] as const;
+export type Basemap = (typeof BASEMAPS)[number]['key'];
+
+/** Une carte préparée : un terrain dessiné une fois, réutilisable. */
+export interface PreparedMap {
+  id: string;
+  name: string;
+  basemap: Basemap;
+  centerLat: number | null;
+  centerLng: number | null;
+  zoom: number | null;
+  objectCount: number;
+  objectiveCount: number;
+  updatedAt: string;
+}
+
+export interface PreparedMapDetail extends PreparedMap {
+  content: { objects?: unknown[]; objectives?: unknown[] };
+}
+
+/** Un bonus arbitré par le serveur (§7.7). */
+export interface PerkDefinition {
+  id: string;
+  type: 'drone' | 'jammer';
+  radiusMeters: number;
+  durationSeconds: number;
+  cooldownSeconds: number;
+  stockPerTeam: number | null;
+  allowedRoles: string[];
 }
 
 /** Un drapeau à capturer (§7.8). */
@@ -257,6 +296,45 @@ export const api = {
     gameId: string,
     body: { name: string; lat: number; lng: number; captureOrder?: number },
   ) => request<Objective>('POST', `/games/${gameId}/objectives`, body),
+  // --- Cartes préparées ---------------------------------------------
+  maps: () => request<PreparedMap[]>('GET', '/maps'),
+  createMap: (name: string, basemap: Basemap) =>
+    request<PreparedMapDetail>('POST', '/maps', { name, basemap }),
+  map: (mapId: string) => request<PreparedMapDetail>('GET', `/maps/${mapId}`),
+  updateMap: (
+    mapId: string,
+    body: Partial<{
+      name: string;
+      basemap: Basemap;
+      content: unknown;
+      centerLat: number;
+      centerLng: number;
+      zoom: number;
+    }>,
+  ) => request<PreparedMapDetail>('PATCH', `/maps/${mapId}`, body),
+  deleteMap: (mapId: string) => request<unknown>('DELETE', `/maps/${mapId}`),
+  /** Recopie une carte dans une partie ; `null` detache. */
+  attachMap: (gameId: string, mapId: string | null) =>
+    request<{ objects: number; objectives: number } | null>(
+      'POST',
+      `/games/${gameId}/map`,
+      { mapId },
+    ),
+
+  // --- Bonus ---------------------------------------------------------
+  perks: (gameId: string) =>
+    request<PerkDefinition[]>('GET', `/games/${gameId}/perks`),
+  createPerk: (
+    gameId: string,
+    body: {
+      type: 'drone' | 'jammer';
+      radiusMeters?: number;
+      durationSeconds?: number;
+      cooldownSeconds?: number;
+      stockPerTeam?: number;
+    },
+  ) => request<PerkDefinition>('POST', `/games/${gameId}/perks`, body),
+
   permissions: (gameId: string) =>
     request<{
       catalogue: Array<{ key: string; label: string }>;

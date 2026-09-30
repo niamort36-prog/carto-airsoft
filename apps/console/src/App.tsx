@@ -1,7 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
+
 import {
   api,
+  isMixedContent,
+  MIXED_CONTENT_HINT,
   ROLE_LABELS,
   supabase,
   type GameEntry,
@@ -9,56 +12,72 @@ import {
   type Member,
   type TeamEntry,
 } from './api';
-import { InvitesPanel } from './InvitesPanel';
 import { Login } from './Login';
-import { PermissionsPanel } from './PermissionsPanel';
-import { PrepMap } from './PrepMap';
+import { MapEditor } from './MapEditor';
+import { MapPicker, MapsPanel } from './MapsPanel';
+import { gameStore } from './mapStore';
 import { Replay } from './Replay';
+import { SettingsPanel } from './SettingsPanel';
+import { SharePanel } from './SharePanel';
+import { TeamsPanel } from './TeamsPanel';
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
-  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-      setReady(true);
-    });
-    const { data } = supabase.auth.onAuthStateChange((_e, s) =>
-      setSession(s),
-    );
+    void supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
     return () => data.subscription.unsubscribe();
   }, []);
 
-  if (!ready) return <div className="center">Chargement…</div>;
   if (!session) return <Login />;
   return <Console />;
 }
 
+/** Les deux grandes sections, comme deux tiroirs distincts. */
+type Section = 'cartes' | 'parties';
+
+/** Ce qu'on règle dans une partie. */
+type Onglet = 'carte' | 'reglages' | 'equipes' | 'partage' | 'bilan';
+
+const ONGLETS: Array<{ key: Onglet; label: string }> = [
+  { key: 'carte', label: 'Carte' },
+  { key: 'reglages', label: 'Réglages' },
+  { key: 'equipes', label: 'Équipes' },
+  { key: 'partage', label: 'Partage' },
+  { key: 'bilan', label: 'Bilan' },
+];
+
 function Console() {
+  const [section, setSection] = useState<Section>('parties');
   const [games, setGames] = useState<GameEntry[]>([]);
   const [selected, setSelected] = useState<GameEntry | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
   const [teams, setTeams] = useState<TeamEntry[]>([]);
+  const [onglet, setOnglet] = useState<Onglet>('carte');
   const [error, setError] = useState<string | null>(null);
-  // La console sert à deux moments distincts : avant la partie pour la
-  // préparer, après pour la relire.
-  const [view, setView] = useState<'prep' | 'replay'>('prep');
-  // Rejoindre depuis le navigateur : la console n'est plus réservée à
+
+  // Rejoindre depuis le navigateur : la console n'est pas réservée à
   // l'organisateur, un joueur peut y entrer avec le code qu'on lui donne.
   const [codeSaisi, setCodeSaisi] = useState('');
   const [apercu, setApercu] = useState<InvitePreview | null>(null);
 
+  const rechargerParties = () =>
+    api
+      .games()
+      .then(setGames)
+      .catch((e: Error) => setError(e.message));
+
   useEffect(() => {
-    api.games().then(setGames).catch((e: Error) => setError(e.message));
+    void rechargerParties();
   }, []);
 
   useEffect(() => {
     if (!selected) return;
-    void refreshGame(selected.game.id);
+    void rafraichir(selected.game.id);
   }, [selected?.game.id]);
 
-  async function refreshGame(gameId: string) {
+  async function rafraichir(gameId: string) {
     try {
       const [m, t] = await Promise.all([
         api.members(gameId),
@@ -71,8 +90,6 @@ function Console() {
     }
   }
 
-  // Montre ce à quoi le code engage avant d'inscrire : se tromper de
-  // caractère et atterrir chez l'adversaire serait pénible à défaire.
   async function previewCode() {
     setError(null);
     setApercu(null);
@@ -109,240 +126,191 @@ function Console() {
     ) {
       return;
     }
-    const name = prompt('Nom de la partie ?');
-    if (!name || name.length < 3) return;
+    const nom = prompt('Nom de la partie', 'Op Fontainebleau');
+    if (nom == null || nom.trim().length < 3) return;
+    setError(null);
     try {
-      await api.createGame(name);
-      setGames(await api.games());
-      setSelected(null);
+      await api.createGame(nom.trim());
+      const liste = await api.games();
+      setGames(liste);
+      setSelected(liste.find((g) => g.game.name === nom.trim()) ?? null);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  async function addTeam() {
-    if (!selected) return;
-    const name = prompt('Nom de l’équipe ?');
-    if (!name) return;
-    const color = name.toLowerCase().includes('rouge') ? '#F44336' : '#2196F3';
-    await api.createTeam(selected.game.id, name, color);
-    void refreshGame(selected.game.id);
-  }
+  // Un store par partie : le recréer à chaque rendu relancerait le
+  // chargement en boucle.
+  const storeCarte = useMemo(
+    () => (selected ? gameStore(selected.game.id, 'ortho_ign') : null),
+    [selected?.game.id],
+  );
 
-  async function addSquad(teamId: string) {
-    if (!selected) return;
-    const name = prompt('Nom de l’escouade ?');
-    if (!name) return;
-    await api.createSquad(selected.game.id, teamId, name);
-    void refreshGame(selected.game.id);
-  }
-
-  const canManageTeams = selected?.permissions.includes('teams:manage');
-  const canManageInvites = selected?.permissions.includes('invites:manage');
+  const peutGerer = selected?.permissions.includes('game:manage') ?? false;
+  const peutEquipes = selected?.permissions.includes('teams:manage') ?? false;
+  const peutInviter = selected?.permissions.includes('invites:manage') ?? false;
 
   return (
     <div className="app">
-      <aside className="sidebar">
-        <div className="row">
-          <h1 className="grow">Console</h1>
-          <button onClick={() => supabase.auth.signOut()}>Quitter</button>
-        </div>
-
-        {error && <div className="error">{error}</div>}
-
-        <h2>Parties</h2>
-        <div className="list">
-          {games.map((g) => (
-            <button
-              key={g.game.id}
-              className={`item ${selected?.game.id === g.game.id ? 'selected' : ''}`}
-              onClick={() => setSelected(g)}
-            >
-              <span className="grow">
-                {g.game.name}
-                <br />
-                <span className="muted">
-                  {ROLE_LABELS[g.role] ?? g.role} · {g.game.status}
-                </span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <button style={{ marginTop: 8 }} onClick={createGame}>
-          + Nouvelle partie
-        </button>
-
-        <h2 style={{ marginTop: 16 }}>Rejoindre</h2>
-        <div className="row">
-          <input
-            className="grow"
-            value={codeSaisi}
-            placeholder="ABCD-EFGH"
-            onChange={(e) => {
-              setCodeSaisi(e.target.value.toUpperCase());
-              setApercu(null);
-            }}
-          />
-          <button onClick={previewCode} disabled={codeSaisi.trim().length < 8}>
-            Vérifier
+      <header className="topbar">
+        <strong className="grow">Carto Airsoft</strong>
+        <nav className="tabs">
+          <button
+            className={section === 'cartes' ? 'selected' : ''}
+            onClick={() => setSection('cartes')}
+          >
+            Cartes
           </button>
-        </div>
-        {apercu && (
-          <div className="item" style={{ marginTop: 8 }}>
-            <span className="grow">
-              {apercu.gameName}
-              <br />
-              <span className="muted">
-                {ROLE_LABELS[apercu.role] ?? apercu.role}
-                {apercu.teamName ? ` · camp ${apercu.teamName}` : ''}
-                {apercu.squadName ? ` · ${apercu.squadName}` : ''}
-              </span>
-            </span>
-            <button className="primary" onClick={joinByCode}>
-              Rejoindre
-            </button>
-          </div>
-        )}
+          <button
+            className={section === 'parties' ? 'selected' : ''}
+            onClick={() => setSection('parties')}
+          >
+            Mes parties
+          </button>
+        </nav>
+        <button onClick={() => supabase.auth.signOut()}>Quitter</button>
+      </header>
 
-        {selected && (
-          <>
-            <h2>Organisation</h2>
+      {isMixedContent && <div className="error">{MIXED_CONTENT_HINT}</div>}
+      {error && <div className="error">{error}</div>}
+
+      {section === 'cartes' ? (
+        <MapsPanel />
+      ) : (
+        <div className="split">
+          <aside className="sidebar">
+            <h2>Parties</h2>
             <div className="list">
-              {teams.length === 0 && (
-                <p className="muted">Aucune équipe pour l’instant.</p>
+              {games.length === 0 && (
+                <p className="muted">Aucune partie pour l’instant.</p>
               )}
-              {teams.map((t) => (
-                <div className="item" key={t.id}>
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: 3,
-                      background: t.color,
-                    }}
-                  />
+              {games.map((g) => (
+                <button
+                  key={g.game.id}
+                  className={`item ${
+                    selected?.game.id === g.game.id ? 'selected' : ''
+                  }`}
+                  onClick={() => setSelected(g)}
+                >
                   <span className="grow">
-                    {t.name}
+                    {g.game.name}
                     <br />
                     <span className="muted">
-                      {t.squads.length === 0
-                        ? 'sans escouade'
-                        : t.squads.map((s) => s.name).join(', ')}
+                      {ROLE_LABELS[g.role] ?? g.role} · {g.game.status}
                     </span>
                   </span>
-                  {canManageTeams && (
-                    <button onClick={() => addSquad(t.id)}>+ escouade</button>
-                  )}
-                </div>
+                </button>
               ))}
             </div>
-            {canManageTeams && (
-              <button style={{ marginTop: 8 }} onClick={addTeam}>
-                + Équipe
-              </button>
-            )}
+            <button style={{ marginTop: 8 }} onClick={createGame}>
+              + Nouvelle partie
+            </button>
 
-            <h2>Membres ({members.length})</h2>
-            <div className="list">
-              {members.map((m) => (
-                <div className="item" key={m.membershipId}>
-                  <span className="grow">
-                    {m.pseudo ?? m.email?.split('@')[0] ?? 'Joueur'}
-                    <br />
-                    <span className="muted">
-                      {ROLE_LABELS[m.role] ?? m.role}
-                      {m.squadId
-                        ? ` · ${squadName(teams, m.squadId)}`
-                        : m.teamId
-                          ? ` · ${teamName(teams, m.teamId)}`
-                          : ' · non affecté'}
-                    </span>
+            <h2 style={{ marginTop: 16 }}>Rejoindre</h2>
+            <div className="row">
+              <input
+                className="grow"
+                value={codeSaisi}
+                placeholder="ABCD-EFGH"
+                onChange={(e) => {
+                  setCodeSaisi(e.target.value.toUpperCase());
+                  setApercu(null);
+                }}
+              />
+              <button
+                onClick={previewCode}
+                disabled={codeSaisi.trim().length < 8}
+              >
+                Vérifier
+              </button>
+            </div>
+            {apercu && (
+              <div className="item" style={{ marginTop: 8 }}>
+                <span className="grow">
+                  {apercu.gameName}
+                  <br />
+                  <span className="muted">
+                    {ROLE_LABELS[apercu.role] ?? apercu.role}
+                    {apercu.teamName ? ` · camp ${apercu.teamName}` : ''}
+                    {apercu.squadName ? ` · ${apercu.squadName}` : ''}
                   </span>
-                  {canManageTeams && (
-                    <select
-                      value={m.squadId ?? m.teamId ?? ''}
-                      onChange={async (e) => {
-                        const value = e.target.value;
-                        const isSquad = teams.some((t) =>
-                          t.squads.some((s) => s.id === value),
-                        );
-                        await api.assign(selected.game.id, m.membershipId, {
-                          teamId: isSquad ? null : value || null,
-                          squadId: isSquad ? value : null,
-                        });
-                        void refreshGame(selected.game.id);
-                      }}
-                    >
-                      <option value="">—</option>
-                      {teams.map((t) => (
-                        <optgroup key={t.id} label={t.name}>
-                          <option value={t.id}>{t.name} (sans escouade)</option>
-                          {t.squads.map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {canManageInvites && (
-              <InvitesPanel gameId={selected.game.id} teams={teams} />
+                </span>
+                <button className="primary" onClick={joinByCode}>
+                  Rejoindre
+                </button>
+              </div>
             )}
+          </aside>
 
-            {selected.permissions.includes('game:manage') && (
-              <PermissionsPanel gameId={selected.game.id} />
-            )}
-          </>
-        )}
-      </aside>
-
-      <main className="main">
-        {selected ? (
-          <>
-            <div className="tabs">
-              <button
-                className={view === 'prep' ? 'selected' : ''}
-                onClick={() => setView('prep')}
-              >
-                Préparation
-              </button>
-              <button
-                className={view === 'replay' ? 'selected' : ''}
-                onClick={() => setView('replay')}
-                title={
-                  selected.game.status === 'finished'
-                    ? undefined
-                    : 'Disponible une fois la partie terminée'
-                }
-              >
-                Rejeu et bilan
-              </button>
-            </div>
-            {view === 'prep' ? (
-              <PrepMap key={selected.game.id} gameId={selected.game.id} />
+          <main className="main">
+            {!selected ? (
+              <div className="center">
+                <p className="muted">
+                  Sélectionnez une partie, ou créez-en une.
+                </p>
+              </div>
             ) : (
-              <Replay key={selected.game.id} gameId={selected.game.id} />
+              <>
+                <div className="tabs sous-onglets">
+                  {ONGLETS.map((o) => (
+                    <button
+                      key={o.key}
+                      className={onglet === o.key ? 'selected' : ''}
+                      onClick={() => setOnglet(o.key)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+
+                {onglet === 'carte' && storeCarte && (
+                  <div className="editor">
+                    {peutGerer && (
+                      <div className="panel panel-compact">
+                        <MapPicker
+                          gameId={selected.game.id}
+                          currentMapId={selected.game.preparedMapId ?? null}
+                          onAttached={() => void rechargerParties()}
+                        />
+                      </div>
+                    )}
+                    <MapEditor key={selected.game.id} store={storeCarte} />
+                  </div>
+                )}
+
+                {onglet === 'reglages' && (
+                  <SettingsPanel gameId={selected.game.id} />
+                )}
+
+                {onglet === 'equipes' && (
+                  <TeamsPanel
+                    gameId={selected.game.id}
+                    teams={teams}
+                    members={members}
+                    canManage={peutEquipes}
+                    onChange={() => void rafraichir(selected.game.id)}
+                  />
+                )}
+
+                {onglet === 'partage' &&
+                  (peutInviter ? (
+                    <SharePanel gameId={selected.game.id} teams={teams} />
+                  ) : (
+                    <div className="panel">
+                      <p className="muted">
+                        Votre grade ne permet pas de générer d’invitation.
+                      </p>
+                    </div>
+                  ))}
+
+                {onglet === 'bilan' && (
+                  <Replay key={selected.game.id} gameId={selected.game.id} />
+                )}
+              </>
             )}
-          </>
-        ) : (
-          <div className="center">
-            <p className="muted">
-              Sélectionnez une partie pour préparer sa carte.
-            </p>
-          </div>
-        )}
-      </main>
+          </main>
+        </div>
+      )}
     </div>
   );
 }
-
-const teamName = (teams: TeamEntry[], id: string) =>
-  teams.find((t) => t.id === id)?.name ?? 'équipe';
-
-const squadName = (teams: TeamEntry[], id: string) =>
-  teams.flatMap((t) => t.squads).find((s) => s.id === id)?.name ?? 'escouade';

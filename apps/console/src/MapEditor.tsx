@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { api, type MapObject, type Objective } from './api';
+
+import { BASEMAPS, type Basemap, type MapObject, type Objective } from './api';
 import {
   AFFILIATIONS,
   symbolLabel,
@@ -10,32 +11,61 @@ import {
   type Affiliation,
   type SymbolEntry,
 } from './icons';
+import type { MapStore } from './mapStore';
 
 /**
- * Carte de préparation (§8) : dessiner zones, lignes et points de passage
- * avant la partie. Les objets partent par la MÊME API que le mobile, donc
- * les joueurs les voient sur le terrain — c'est tout l'intérêt.
+ * Éditeur de carte (§8) : tracer zones, lignes, symboles et drapeaux.
+ *
+ * Il ne sait pas ce qu'il édite — une carte préparée réutilisable ou la
+ * carte d'une partie en cours. C'est le [MapStore] qu'on lui donne qui le
+ * décide. Le geste est le même, la destination non.
  */
-const STYLE = {
+
+/** Sources de tuiles, une par fond. */
+const TUILES: Record<Basemap, { url: string; attribution: string }> = {
+  ortho_ign: {
+    url:
+      'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+      '&LAYER=ORTHOIMAGERY.ORTHOPHOTOS&STYLE=normal&TILEMATRIXSET=PM' +
+      '&FORMAT=image%2Fjpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    attribution: '© IGN — Géoplateforme',
+  },
+  plan_ign: {
+    url:
+      'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+      '&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal' +
+      '&TILEMATRIXSET=PM&FORMAT=image%2Fpng' +
+      '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    attribution: '© IGN — Géoplateforme',
+  },
+  osm: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '© OpenStreetMap',
+  },
+  relief: {
+    url:
+      'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
+      '&LAYER=ELEVATION.SLOPES&STYLE=normal&TILEMATRIXSET=PM' +
+      '&FORMAT=image%2Fjpeg&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
+    attribution: '© IGN — Géoplateforme',
+  },
+};
+
+const style = (fond: Basemap) => ({
   version: 8 as const,
   glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
   sources: {
-    plan: {
+    fond: {
       type: 'raster' as const,
-      tiles: [
-        'https://data.geopf.fr/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0' +
-          '&LAYER=GEOGRAPHICALGRIDSYSTEMS.PLANIGNV2&STYLE=normal' +
-          '&TILEMATRIXSET=PM&FORMAT=image%2Fpng' +
-          '&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}',
-      ],
+      tiles: [TUILES[fond].url],
       tileSize: 256,
-      attribution: '© IGN — Géoplateforme',
+      attribution: TUILES[fond].attribution,
     },
   },
-  layers: [{ id: 'plan', type: 'raster' as const, source: 'plan' }],
-};
+  layers: [{ id: 'fond', type: 'raster' as const, source: 'fond' }],
+});
 
-type Mode = 'none' | 'waypoint' | 'line' | 'zone' | 'flag';
+type Mode = 'none' | 'symbole' | 'ligne' | 'zone' | 'drapeau';
 
 /** Couleurs de tracé : celles qui se distinguent sur un fond de forêt. */
 const COULEURS = [
@@ -55,7 +85,13 @@ const FAMILLES: Record<SymbolEntry['family'], string> = {
   point: 'Points d’ordre',
 };
 
-export function PrepMap({ gameId }: { gameId: string }) {
+export function MapEditor({
+  store,
+  onBasemapChange,
+}: {
+  store: MapStore;
+  onBasemapChange?: (b: Basemap) => void;
+}) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<maplibregl.Map | null>(null);
   const [mode, setMode] = useState<Mode>('none');
@@ -64,37 +100,37 @@ export function PrepMap({ gameId }: { gameId: string }) {
   const [objectives, setObjectives] = useState<Objective[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  // Ce qu'on s'apprête à poser : couleur du tracé, symbole du marqueur.
   const [couleur, setCouleur] = useState('#2196F3');
   const [symbole, setSymbole] = useState('infantry_allied');
   const [affiliation, setAffiliation] = useState<Affiliation>('allied');
   const [famille, setFamille] = useState<SymbolEntry['family']>('unit');
   const [pickerOuvert, setPickerOuvert] = useState(false);
 
-  const symboleChoisi =
-    SYMBOLS.find((s) => s.id === symbole) ?? SYMBOLS[0];
+  const symboleChoisi = SYMBOLS.find((s) => s.id === symbole) ?? SYMBOLS[0];
 
   // Refs pour que le handler de clic (attaché une fois) voie l'état courant.
   const modeRef = useRef(mode);
   const draftRef = useRef(draft);
   const couleurRef = useRef(couleur);
   const symboleRef = useRef(symbole);
+  const storeRef = useRef(store);
   modeRef.current = mode;
   draftRef.current = draft;
   couleurRef.current = couleur;
   symboleRef.current = symbole;
+  storeRef.current = store;
 
   useEffect(() => {
     if (!container.current || map.current) return;
     const m = new maplibregl.Map({
       container: container.current,
-      style: STYLE,
+      style: style(store.basemap),
       center: [2.632, 48.404],
       zoom: 13,
     });
     m.addControl(new maplibregl.NavigationControl());
     m.on('load', () => {
-      m.addSource('prep', { type: 'geojson', data: empty() });
+      m.addSource('prep', { type: 'geojson', data: vide() });
       m.addLayer({
         id: 'prep-fill',
         type: 'fill',
@@ -106,6 +142,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
         id: 'prep-line',
         type: 'line',
         source: 'prep',
+        filter: ['!=', ['geometry-type'], 'Point'],
         paint: { 'line-color': ['get', 'color'], 'line-width': 3 },
       });
       m.addLayer({
@@ -114,13 +151,13 @@ export function PrepMap({ gameId }: { gameId: string }) {
         source: 'prep',
         filter: ['==', ['geometry-type'], 'Point'],
         paint: {
-          'circle-radius': 7,
           'circle-color': ['get', 'color'],
-          'circle-stroke-width': 2,
+          'circle-radius': 6,
           'circle-stroke-color': '#fff',
+          'circle-stroke-width': 2,
         },
       });
-      m.addSource('draft', { type: 'geojson', data: empty() });
+      m.addSource('draft', { type: 'geojson', data: vide() });
       m.addLayer({
         id: 'draft-line',
         type: 'line',
@@ -128,7 +165,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
         paint: {
           'line-color': '#ffffff',
           'line-width': 2,
-          'line-dasharray': [2, 1.5],
+          'line-dasharray': [2, 2],
         },
       });
       m.addLayer({
@@ -137,32 +174,85 @@ export function PrepMap({ gameId }: { gameId: string }) {
         source: 'draft',
         filter: ['==', ['geometry-type'], 'Point'],
         paint: {
-          'circle-radius': 5,
           'circle-color': '#fff',
-          'circle-stroke-width': 1.5,
+          'circle-radius': 4,
           'circle-stroke-color': '#000',
+          'circle-stroke-width': 1,
         },
       });
-      load();
+      void recharger();
     });
     m.on('click', (e) => {
-      const current = modeRef.current;
-      if (current === 'none') return;
+      const courant = modeRef.current;
+      if (courant === 'none') return;
       const point: [number, number] = [e.lngLat.lng, e.lngLat.lat];
-      if (current === 'waypoint') {
-        void save('marker', { type: 'Point', coordinates: point }, point);
+      if (courant === 'symbole') {
+        void poser('marker', { type: 'Point', coordinates: point }, point);
         setMode('none');
-      } else if (current === 'flag') {
-        void placerDrapeau(point);
+      } else if (courant === 'drapeau') {
+        void poserDrapeau(point);
         setMode('none');
       } else {
         setDraft([...draftRef.current, point]);
       }
     });
+    // Mémorise la vue : on rouvre la carte là où on l'a laissée.
+    m.on('moveend', () => {
+      const c = m.getCenter();
+      storeRef.current.rememberView?.({
+        centerLat: c.lat,
+        centerLng: c.lng,
+        zoom: m.getZoom(),
+      });
+    });
     map.current = m;
   }, []);
 
-  // Rendu du brouillon en cours de tracé.
+  // Changement de fond : MapLibre remplace tout le style, il faut donc
+  // reposer les couches de dessin derrière.
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !m.isStyleLoaded()) return;
+    const source = m.getSource('prep');
+    if (!source) return;
+    m.setStyle(style(store.basemap));
+    m.once('styledata', () => {
+      if (m.getSource('prep')) return;
+      m.addSource('prep', { type: 'geojson', data: vide() });
+      m.addLayer({
+        id: 'prep-fill',
+        type: 'fill',
+        source: 'prep',
+        filter: ['==', ['geometry-type'], 'Polygon'],
+        paint: { 'fill-color': ['get', 'color'], 'fill-opacity': 0.25 },
+      });
+      m.addLayer({
+        id: 'prep-line',
+        type: 'line',
+        source: 'prep',
+        filter: ['!=', ['geometry-type'], 'Point'],
+        paint: { 'line-color': ['get', 'color'], 'line-width': 3 },
+      });
+      m.addLayer({
+        id: 'prep-point',
+        type: 'circle',
+        source: 'prep',
+        filter: ['==', ['geometry-type'], 'Point'],
+        paint: {
+          'circle-color': ['get', 'color'],
+          'circle-radius': 6,
+          'circle-stroke-color': '#fff',
+          'circle-stroke-width': 2,
+        },
+      });
+      dessiner(objects);
+    });
+  }, [store.basemap]);
+
+  useEffect(() => {
+    dessiner(objects);
+  }, [objects]);
+
   useEffect(() => {
     const src = map.current?.getSource('draft') as
       | maplibregl.GeoJSONSource
@@ -178,33 +268,13 @@ export function PrepMap({ gameId }: { gameId: string }) {
     } as GeoJSON.FeatureCollection);
   }, [draft]);
 
+  // Les drapeaux sont des marqueurs HTML : ce ne sont pas des dessins, et
+  // les mêler aux tracés laisserait croire qu'on les efface pareil.
+  const marqueursDrapeaux = useRef<maplibregl.Marker[]>([]);
   useEffect(() => {
-    const src = map.current?.getSource('prep') as
-      | maplibregl.GeoJSONSource
-      | undefined;
-    src?.setData({
-      type: 'FeatureCollection',
-      features: objects.map((o) =>
-        feature(
-          // Les marqueurs n'ont pas de géométrie dédiée : on la reconstruit
-          // depuis leur position de référence.
-          (o.geometry as unknown as GeoJSON.Geometry | null) ?? {
-            type: 'Point',
-            coordinates: [o.lng, o.lat],
-          },
-          { color: (o.properties.color as string) ?? '#FF9800' },
-        ),
-      ),
-    } as GeoJSON.FeatureCollection);
-  }, [objects]);
-
-  // Les drapeaux se posent en marqueurs HTML : ils ne sont pas des objets
-  // de carte, et les mêler aux tracés laisserait croire qu'on les efface
-  // de la même façon.
-  const marqueursFlags = useRef<maplibregl.Marker[]>([]);
-  useEffect(() => {
-    marqueursFlags.current.forEach((m) => m.remove());
-    marqueursFlags.current = objectives.map((o) => {
+    marqueursDrapeaux.current.forEach((m) => m.remove());
+    if (!map.current) return;
+    marqueursDrapeaux.current = objectives.map((o) => {
       const el = document.createElement('div');
       el.className = 'flag-marker';
       el.title = o.name;
@@ -218,129 +288,132 @@ export function PrepMap({ gameId }: { gameId: string }) {
     });
   }, [objectives]);
 
-  async function load() {
+  function dessiner(liste: MapObject[]) {
+    const src = map.current?.getSource('prep') as
+      | maplibregl.GeoJSONSource
+      | undefined;
+    src?.setData({
+      type: 'FeatureCollection',
+      features: liste.map((o) =>
+        feature(
+          (o.geometry as unknown as GeoJSON.Geometry | null) ?? {
+            type: 'Point',
+            coordinates: [o.lng, o.lat],
+          },
+          { color: (o.properties.color as string) ?? '#FF9800' },
+        ),
+      ),
+    } as GeoJSON.FeatureCollection);
+  }
+
+  async function recharger() {
     try {
-      const [res, flags] = await Promise.all([
-        api.sync(gameId),
-        api.objectives(gameId).catch(() => [] as Objective[]),
-      ]);
-      setObjects(res.objects.filter((o) => !('deletedAt' in o && o.deletedAt)));
-      setObjectives(flags);
+      const { objects: o, objectives: d } = await storeRef.current.load();
+      setObjects(o);
+      setObjectives(d);
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  /// Pose un drapeau. Ce n'est PAS un objet de carte : c'est un objectif
-  /// arbitré par le serveur (§7.8), avec son QR de capture et son score.
-  async function placerDrapeau(point: [number, number]) {
-    const nom = prompt('Nom du drapeau', `Drapeau ${objectives.length + 1}`);
-    if (nom == null || !nom.trim()) return;
-    setError(null);
-    try {
-      await api.createObjective(gameId, {
-        name: nom.trim(),
-        lng: point[0],
-        lat: point[1],
-      });
-      load();
-    } catch (e) {
-      setError((e as Error).message);
-    }
-  }
-
-  async function save(
-    kind: string,
+  async function poser(
+    kind: 'marker' | 'line' | 'zone',
     geometry: GeoJSON.Geometry,
     reference: [number, number],
   ) {
     setError(null);
     try {
-      await api.pushObjects(gameId, [
-        {
-          id: crypto.randomUUID(),
-          kind,
-          markerType: kind === 'marker' ? 'waypoint' : 'poi',
-          lat: reference[1],
-          lng: reference[0],
-          ...(kind === 'marker' ? {} : { geometry }),
-          properties: {
-            // La couleur et le symbole partent avec l'objet : le terrain
-            // voit exactement ce que la console a posé.
-            color: couleurRef.current,
-            unitLabel:
-              kind === 'zone'
-                ? 'Zone'
-                : kind === 'line'
-                  ? 'Ligne'
-                  : symbolLabel(symboleRef.current),
-            icon: kind === 'marker' ? symboleRef.current : undefined,
-          },
-          createdAt: new Date().toISOString(),
+      await storeRef.current.addObject({
+        kind,
+        lat: reference[1],
+        lng: reference[0],
+        geometry,
+        properties: {
+          // La couleur et le symbole partent avec l'objet : le terrain voit
+          // exactement ce que la console a posé.
+          color: couleurRef.current,
+          unitLabel:
+            kind === 'zone'
+              ? 'Zone'
+              : kind === 'line'
+                ? 'Ligne'
+                : symbolLabel(symboleRef.current),
+          ...(kind === 'marker' ? { icon: symboleRef.current } : {}),
         },
-      ]);
+      });
       setDraft([]);
-      load();
+      await recharger();
     } catch (e) {
       setError((e as Error).message);
     }
   }
 
-  function finish(kind: 'line' | 'zone') {
-    if (kind === 'line' && draft.length < 2) return;
+  async function poserDrapeau(point: [number, number]) {
+    const nom = prompt('Nom du drapeau', `Drapeau ${objectives.length + 1}`);
+    if (nom == null || !nom.trim()) return;
+    setError(null);
+    try {
+      await storeRef.current.addObjective({
+        name: nom.trim(),
+        lng: point[0],
+        lat: point[1],
+      });
+      await recharger();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function terminer(kind: 'ligne' | 'zone') {
+    if (kind === 'ligne' && draft.length < 2) return;
     if (kind === 'zone' && draft.length < 3) return;
     const geometry: GeoJSON.Geometry =
-      kind === 'line'
+      kind === 'ligne'
         ? { type: 'LineString', coordinates: draft }
         : { type: 'Polygon', coordinates: [[...draft, draft[0]]] };
-    void save(kind, geometry, draft[0]);
+    void poser(kind === 'ligne' ? 'line' : 'zone', geometry, draft[0]);
     setMode('none');
   }
+
+  const outil = (m: Mode, libelle: string) => (
+    <button
+      className={mode === m ? 'primary' : ''}
+      onClick={() => {
+        setMode(mode === m ? 'none' : m);
+        setDraft([]);
+      }}
+    >
+      {libelle}
+    </button>
+  );
 
   return (
     <>
       <div className="map" ref={container} />
       <div className="toolbar">
-        <button
-          className={mode === 'waypoint' ? 'primary' : ''}
-          onClick={() => {
-            setMode(mode === 'waypoint' ? 'none' : 'waypoint');
-            setDraft([]);
-          }}
-        >
-          Symbole
-        </button>
-        <button
-          className={mode === 'line' ? 'primary' : ''}
-          onClick={() => {
-            setMode(mode === 'line' ? 'none' : 'line');
-            setDraft([]);
-          }}
-        >
-          Ligne
-        </button>
-        <button
-          className={mode === 'zone' ? 'primary' : ''}
-          onClick={() => {
-            setMode(mode === 'zone' ? 'none' : 'zone');
-            setDraft([]);
-          }}
-        >
-          Zone
-        </button>
-        <button
-          className={mode === 'flag' ? 'primary' : ''}
-          onClick={() => {
-            setMode(mode === 'flag' ? 'none' : 'flag');
-            setDraft([]);
-          }}
-        >
-          Drapeau
-        </button>
+        {outil('symbole', 'Symbole')}
+        {outil('ligne', 'Ligne')}
+        {outil('zone', 'Zone')}
+        {outil('drapeau', 'Drapeau')}
 
-        {/* La couleur vaut pour ce qu'on s'apprête à tracer. Elle voyage
-            dans `properties.color`, donc le terrain voit la même. */}
-        {(mode === 'line' || mode === 'zone' || mode === 'waypoint') && (
+        {store.setBasemap && (
+          <select
+            value={store.basemap}
+            onChange={(e) => {
+              const b = e.target.value as Basemap;
+              void store.setBasemap!(b);
+              onBasemapChange?.(b);
+            }}
+          >
+            {BASEMAPS.map((b) => (
+              <option key={b.key} value={b.key}>
+                {b.label}
+              </option>
+            ))}
+          </select>
+        )}
+
+        {(mode === 'ligne' || mode === 'zone' || mode === 'symbole') && (
           <span className="swatches">
             {COULEURS.map((c) => (
               <button
@@ -354,19 +427,19 @@ export function PrepMap({ gameId }: { gameId: string }) {
           </span>
         )}
 
-        {mode === 'waypoint' && (
+        {mode === 'symbole' && (
           <button onClick={() => setPickerOuvert(true)}>
             <img src={symboleChoisi.url} alt="" className="swatch-icon" />
             {symbolLabel(symboleChoisi.id)}
           </button>
         )}
 
-        {(mode === 'line' || mode === 'zone') && (
+        {(mode === 'ligne' || mode === 'zone') && (
           <>
             <span className="muted" style={{ alignSelf: 'center' }}>
               {draft.length} pt
             </span>
-            <button onClick={() => finish(mode)}>Valider</button>
+            <button onClick={() => terminer(mode)}>Valider</button>
             <button
               onClick={() => {
                 setDraft([]);
@@ -377,7 +450,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
             </button>
           </>
         )}
-        {mode !== 'none' && mode !== 'line' && mode !== 'zone' && (
+        {(mode === 'symbole' || mode === 'drapeau') && (
           <span className="muted" style={{ alignSelf: 'center' }}>
             Cliquez sur la carte
           </span>
@@ -395,10 +468,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
                 className={affiliation === a.key ? 'primary' : ''}
                 onClick={() => setAffiliation(a.key)}
               >
-                <span
-                  className="swatch-dot"
-                  style={{ background: a.color }}
-                />
+                <span className="swatch-dot" style={{ background: a.color }} />
                 {a.label}
               </button>
             ))}
@@ -440,7 +510,7 @@ export function PrepMap({ gameId }: { gameId: string }) {
   );
 }
 
-const empty = (): GeoJSON.FeatureCollection => ({
+const vide = (): GeoJSON.FeatureCollection => ({
   type: 'FeatureCollection',
   features: [],
 });

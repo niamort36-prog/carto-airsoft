@@ -375,3 +375,130 @@ table.stats .dot {
   text-shadow: 0 0 3px #000, 0 0 6px #000;
   white-space: nowrap;
 }
+
+/* --- Structure à onglets ------------------------------------------------ */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #141414;
+}
+.tabs {
+  display: flex;
+  gap: 4px;
+}
+.tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 8px 14px;
+  cursor: pointer;
+  color: inherit;
+}
+.tabs button.selected {
+  border-bottom-color: #7fd18a;
+  font-weight: 600;
+}
+.sous-onglets {
+  padding: 0 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+/* Les parties : liste à gauche, contenu à droite. */
+.split {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.split > .sidebar {
+  width: 280px;
+  flex: none;
+  overflow: auto;
+  padding: 12px;
+  border-right: 1px solid #2a2a2a;
+}
+.split > .main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.panel {
+  padding: 16px;
+  overflow: auto;
+}
+.panel-compact {
+  padding: 12px 16px;
+  border-bottom: 1px solid #2a2a2a;
+  max-height: 40vh;
+}
+
+/* L'éditeur occupe toute la hauteur restante ; la carte doit avoir une
+   taille réelle, sans quoi MapLibre ne dessine rien. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.editor .map {
+  flex: 1;
+  min-height: 320px;
+}
+.editor-head {
+  padding: 8px 16px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+/* --- Planche de QR à imprimer ------------------------------------------- */
+
+.planche {
+  position: fixed;
+  inset: 0;
+  background: #fff;
+  color: #000;
+  overflow: auto;
+  z-index: 50;
+}
+.planche-barre {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid #ccc;
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+.planche-grille {
+  display: grid;
+  gap: 10mm;
+  padding: 10mm;
+}
+.planche-case {
+  margin: 0;
+  text-align: center;
+  break-inside: avoid;
+}
+.planche-case canvas {
+  width: 100%;
+  height: auto;
+  max-width: 320px;
+}
+.planche-case figcaption {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 14px;
+  letter-spacing: 1px;
+}
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
