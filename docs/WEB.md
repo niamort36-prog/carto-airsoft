@@ -71,6 +71,38 @@ Sur ce port de développement, l'application vise `http://localhost:3000/v1`.
 Si l'API tourne ailleurs, nul besoin de recompiler — le bouton *Adresse du
 serveur*, sur l'écran de connexion, l'enregistre dans le navigateur.
 
+## En ligne
+
+L'application est publiée sur GitHub Pages à chaque poussée :
+
+**https://niamort36-prog.github.io/carto-airsoft/**
+
+Le workflow est [`.github/workflows/pages.yml`](../.github/workflows/pages.yml).
+Pages doit être activé une fois pour toutes dans *Settings → Pages →
+Source : GitHub Actions* ; le jeton du workflow n'a pas le droit de le
+faire lui-même.
+
+### ⚠️ Le site seul ne suffit pas à jouer
+
+Pages sert en **HTTPS**, et un navigateur refuse qu'une page HTTPS appelle
+une API en **HTTP**. Concrètement, sur le site en ligne :
+
+* la page se charge et la connexion Supabase passe (elle est en HTTPS) ;
+* **tous les appels à l'API arbitre échouent** tant qu'elle n'est joignable
+  qu'en `http://localhost:3000` ou sur une IP locale.
+
+Il faut donc exposer l'API en HTTPS. Le plus court, et gratuit :
+
+```bash
+cloudflared tunnel --url http://localhost:3000
+```
+
+La commande imprime une adresse `https://….trycloudflare.com`. Elle se
+saisit dans l'application — bouton *Adresse du serveur*, sur l'écran de
+connexion — sans rien recompiler. Pour la figer à la place, renseigner la
+variable de dépôt `API_BASE_URL` (*Settings → Secrets and variables →
+Actions → Variables*).
+
 ## Construire et déployer
 
 ```bash

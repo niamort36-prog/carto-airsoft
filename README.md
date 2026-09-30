@@ -72,6 +72,17 @@ puis y placer un adversaire à portée du drone :
 node apps/api/e2e/demo-setup.mjs "Op Fontainebleau"
 ```
 
+## Essayer sans rien installer
+
+L'application navigateur est publiée à chaque poussée :
+**https://niamort36-prog.github.io/carto-airsoft/**
+
+⚠️ Le site est en HTTPS et ne peut donc pas appeler une API en HTTP. Pour
+qu'il serve à autre chose qu'à regarder l'écran de connexion, exposer
+l'API en HTTPS (`cloudflared tunnel --url http://localhost:3000`) et coller
+l'adresse obtenue dans le bouton *Adresse du serveur*. Détails dans
+[docs/WEB.md](docs/WEB.md).
+
 ## Les deux sites
 
 Deux choses distinctes tournent dans un navigateur, et il vaut mieux ne pas
