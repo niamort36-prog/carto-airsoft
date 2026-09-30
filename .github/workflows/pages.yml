@@ -85,11 +85,11 @@ jobs:
           echo "Fichiers attendus présents."
         working-directory: apps/mobile
 
-      # `enablement` active Pages au premier passage : sans cela il
-      # faudrait d'abord le faire à la main dans les réglages du dépôt.
+      # Pages s'active une fois pour toutes dans les réglages du dépôt
+      # (Settings → Pages → Source : GitHub Actions). Le jeton du workflow
+      # n'a pas le droit de le faire lui-même : `enablement: true` échoue
+      # avec « Resource not accessible by integration ».
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/mobile/build/web
