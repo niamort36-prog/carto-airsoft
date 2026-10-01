@@ -87,11 +87,11 @@ republie par `npm run console:publish` : son dépôt ne contient que le site
 construit, jamais de source — une copie du résultat ne diverge pas, une
 copie de la source si.
 
-⚠️ Le site est en HTTPS et ne peut donc pas appeler une API en HTTP. Pour
-qu'il serve à autre chose qu'à regarder l'écran de connexion, exposer
-l'API en HTTPS (`cloudflared tunnel --url http://localhost:3000`) et coller
-l'adresse obtenue dans le bouton *Adresse du serveur*. Détails dans
-[docs/WEB.md](docs/WEB.md).
+⚠️ Un site en HTTPS ne peut pas appeler une API en HTTP : le navigateur
+bloque l'appel avant qu'il parte. Pour que ces adresses servent à autre
+chose qu'à regarder l'écran de connexion, il faut donner au serveur une
+adresse HTTPS — **[guide pas à pas](docs/GUIDE_HTTPS.md)**, sans rien
+installer.
 
 ## Les deux sites
 
