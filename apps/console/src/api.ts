@@ -195,6 +195,18 @@ export interface PreparedMapDetail extends PreparedMap {
   content: { objects?: unknown[]; objectives?: unknown[] };
 }
 
+/** Ce que le couvert fait aux hostiles qui s'y trouvent. */
+export type Concealment = 'none' | 'intermittent' | 'hidden';
+
+/**
+ * Couverts. Ce ne sont pas des données d'occupation du sol : ce sont les
+ * zones que l'organisateur a dessinées et étiquetées.
+ */
+export const COVERS = [
+  { key: 'forest', label: 'Forêt' },
+  { key: 'urban', label: 'Zone urbaine' },
+] as const;
+
 /** Un bonus arbitré par le serveur (§7.7). */
 export interface PerkDefinition {
   id: string;
@@ -204,7 +216,22 @@ export interface PerkDefinition {
   cooldownSeconds: number;
   stockPerTeam: number | null;
   allowedRoles: string[];
+  orbit: boolean;
+  sweepSeconds: number;
+  concealment: Concealment;
+  concealedCovers: string[];
 }
+
+export type PerkSettings = Partial<{
+  radiusMeters: number;
+  durationSeconds: number;
+  cooldownSeconds: number;
+  stockPerTeam: number | null;
+  orbit: boolean;
+  sweepSeconds: number;
+  concealment: Concealment;
+  concealedCovers: string[];
+}>;
 
 /** Un drapeau à capturer (§7.8). */
 export interface Objective {
@@ -374,14 +401,12 @@ export const api = {
     request<PerkDefinition[]>('GET', `/games/${gameId}/perks`),
   createPerk: (
     gameId: string,
-    body: {
-      type: 'drone' | 'jammer';
-      radiusMeters?: number;
-      durationSeconds?: number;
-      cooldownSeconds?: number;
-      stockPerTeam?: number;
-    },
+    body: { type: 'drone' | 'jammer' } & PerkSettings,
   ) => request<PerkDefinition>('POST', `/games/${gameId}/perks`, body),
+  updatePerk: (gameId: string, perkId: string, body: PerkSettings) =>
+    request<PerkDefinition>('PATCH', `/games/${gameId}/perks/${perkId}`, body),
+  deletePerk: (gameId: string, perkId: string) =>
+    request<unknown>('DELETE', `/games/${gameId}/perks/${perkId}`),
 
   permissions: (gameId: string) =>
     request<{

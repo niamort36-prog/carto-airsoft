@@ -502,3 +502,29 @@ table.stats .dot {
     display: none !important;
   }
 }
+
+/* --- Réglages d'un bonus ------------------------------------------------ */
+
+.perk-form {
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+.reglages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+.reglage {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.reglage input {
+  width: 100%;
+}
+.reglage small {
+  font-size: 11px;
+}

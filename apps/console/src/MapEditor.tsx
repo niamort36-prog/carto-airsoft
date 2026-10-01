@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-import { BASEMAPS, type Basemap, type MapObject, type Objective } from './api';
+import {
+  BASEMAPS,
+  COVERS,
+  type Basemap,
+  type MapObject,
+  type Objective,
+} from './api';
 import {
   AFFILIATIONS,
   symbolLabel,
@@ -105,6 +111,9 @@ export function MapEditor({
   const [affiliation, setAffiliation] = useState<Affiliation>('allied');
   const [famille, setFamille] = useState<SymbolEntry['family']>('unit');
   const [pickerOuvert, setPickerOuvert] = useState(false);
+  // Ce qu'une zone représente sur le terrain. C'est cette étiquette que le
+  // drone consulte : le serveur n'a aucune carte d'occupation du sol.
+  const [couvert, setCouvert] = useState('');
 
   const symboleChoisi = SYMBOLS.find((s) => s.id === symbole) ?? SYMBOLS[0];
 
@@ -113,11 +122,13 @@ export function MapEditor({
   const draftRef = useRef(draft);
   const couleurRef = useRef(couleur);
   const symboleRef = useRef(symbole);
+  const couvertRef = useRef(couvert);
   const storeRef = useRef(store);
   modeRef.current = mode;
   draftRef.current = draft;
   couleurRef.current = couleur;
   symboleRef.current = symbole;
+  couvertRef.current = couvert;
   storeRef.current = store;
 
   useEffect(() => {
@@ -339,6 +350,10 @@ export function MapEditor({
                 ? 'Ligne'
                 : symbolLabel(symboleRef.current),
           ...(kind === 'marker' ? { icon: symboleRef.current } : {}),
+          // Seule une zone peut couvrir : une ligne n'abrite personne.
+          ...(kind === 'zone' && couvertRef.current
+            ? { cover: couvertRef.current }
+            : {}),
         },
       });
       setDraft([]);
@@ -425,6 +440,21 @@ export function MapEditor({
               />
             ))}
           </span>
+        )}
+
+        {mode === 'zone' && (
+          <select
+            value={couvert}
+            onChange={(e) => setCouvert(e.target.value)}
+            title="Ce que cette zone représente sur le terrain"
+          >
+            <option value="">Zone ordinaire</option>
+            {COVERS.map((c) => (
+              <option key={c.key} value={c.key}>
+                Couvert : {c.label}
+              </option>
+            ))}
+          </select>
         )}
 
         {mode === 'symbole' && (
