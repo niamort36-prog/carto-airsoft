@@ -134,6 +134,13 @@
       "when": 1790790512260,
       "tag": "0018_lethal_menace",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790818051842,
+      "tag": "0019_marvelous_squadron_sinister",
+      "breakpoints": true
     }
   ]
 }

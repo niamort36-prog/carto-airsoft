@@ -10,6 +10,7 @@ import { and, count, desc, eq, gt, isNull, ne, sql } from 'drizzle-orm';
 import type { AuthenticatedUser } from '../auth/supabase-token.service';
 import { DRIZZLE, type Database } from '../db/db.module';
 import {
+  mapObjects,
   memberships,
   perkDefinitions,
   perkInstances,
@@ -31,6 +32,11 @@ export interface RevealedContact {
   /** Insigne du contact : le drone montre le vrai type d'unité repéré. */
   unitType: string;
   lifeStatus: string;
+  /**
+   * Repéré sous couvert : il peut disparaître au balayage suivant sans
+   * avoir bougé. Le dire évite de conclure de son absence.
+   */
+  concealed?: boolean;
 }
 
 export interface PerkView {
@@ -91,6 +97,10 @@ export class PerksService {
         cooldownSeconds: dto.cooldownSeconds ?? 300,
         stockPerTeam: dto.stockPerTeam ?? null,
         allowedRoles: dto.allowedRoles ?? [],
+        orbit: dto.orbit ?? true,
+        sweepSeconds: dto.sweepSeconds ?? 0,
+        concealment: dto.concealment ?? 'none',
+        concealedCovers: dto.concealedCovers ?? [],
       })
       .returning();
     return row;
@@ -150,6 +160,10 @@ export class PerksService {
           cooldownSeconds: def.cooldownSeconds,
           stockPerTeam: def.stockPerTeam,
           allowedRoles: def.allowedRoles,
+          orbit: def.orbit,
+          sweepSeconds: def.sweepSeconds,
+          concealment: def.concealment,
+          concealedCovers: def.concealedCovers,
           remaining,
           availableAt,
         };
@@ -269,6 +283,7 @@ export class PerksService {
         dto.lat,
         dto.lng,
         def.radiusMeters,
+        def,
       );
       // Diffusé à la seule équipe du lanceur : les positions ennemies ne
       // quittent jamais le serveur en dehors de ce canal restreint.
@@ -279,6 +294,18 @@ export class PerksService {
         endsAt,
         contacts,
       } satisfies PerkRevealPayload);
+
+      if (def.sweepSeconds > 0) {
+        this.planifierBalayages(
+          gameId,
+          membership.teamId,
+          instance.id,
+          endsAt,
+          dto.lat,
+          dto.lng,
+          def,
+        );
+      }
     } else {
       jammed = await this.jamEnemyDrones(
         gameId,
@@ -327,7 +354,12 @@ export class PerksService {
     lat: number,
     lng: number,
     radiusMeters: number,
+    def?: Pick<PerkDefinition, 'concealment' | 'concealedCovers'>,
   ): Promise<RevealedContact[]> {
+    const couverts = def?.concealedCovers ?? [];
+    const dissimule = (def?.concealment ?? 'none') !== 'none' &&
+      couverts.length > 0;
+
     const rows = await this.db
       .select({
         membershipId: memberships.id,
@@ -336,6 +368,30 @@ export class PerksService {
         unitType: memberships.unitType,
         lifeStatus: memberships.lifeStatus,
         position: memberships.lastPosition,
+        // Le joueur est-il DANS une zone que l'organisateur a étiquetée
+        // comme couvrante ? Le serveur n'a aucune donnée d'occupation du
+        // sol : ce sont les zones dessinées qui portent l'information.
+        couvert: dissimule
+          ? sql<boolean>`EXISTS (
+              SELECT 1 FROM ${mapObjects} z
+              WHERE z.game_id = ${gameId}
+                AND z.kind = 'zone'
+                AND z.deleted_at IS NULL
+                AND z.geometry IS NOT NULL
+                AND z.properties->>'cover' IN (${sql.join(
+                      couverts.map((c) => sql`${c}`),
+                      sql`, `,
+                    )})
+                -- Les deux géométries doivent porter le MÊME système de
+                -- coordonnées. Les positions enregistrées n'en déclarent
+                -- pas (le reste du code passe par ::geography, qui suppose
+                -- le 4326) : on le pose explicitement des deux côtés.
+                AND ST_Contains(
+                      ST_SetSRID(ST_GeomFromGeoJSON(z.geometry::text), 4326),
+                      ST_SetSRID(${memberships.lastPosition}, 4326)
+                    )
+            )`
+          : sql<boolean>`false`,
       })
       .from(memberships)
       .innerJoin(users, eq(memberships.userId, users.id))
@@ -356,16 +412,185 @@ export class PerksService {
         ),
       );
 
-    return rows.map((r) => ({
-      membershipId: r.membershipId,
-      pseudo: r.pseudo,
-      teamId: r.teamId,
-      unitType: r.unitType,
-      lat: r.position!.y,
-      lng: r.position!.x,
-      lifeStatus: r.lifeStatus,
-    }));
+    return rows
+      .filter((r) => {
+        if (!r.couvert) return true;
+        // Sous couvert : invisible, ou visible seulement de temps en temps.
+        // Le tirage est refait à CHAQUE balayage — c'est ce qui donne
+        // l'intermittence, et ce qui empêche de conclure d'un seul blip.
+        if (def?.concealment === 'hidden') return false;
+        return Math.random() < PerksService.CHANCE_SOUS_COUVERT;
+      })
+      .map((r) => ({
+        membershipId: r.membershipId,
+        pseudo: r.pseudo,
+        teamId: r.teamId,
+        unitType: r.unitType,
+        lat: r.position!.y,
+        lng: r.position!.x,
+        lifeStatus: r.lifeStatus,
+        // Dit au joueur que ce contact est fugace : il saura qu'il ne peut
+        // pas conclure de son absence au balayage suivant.
+        concealed: r.couvert,
+      }));
   }
+
+  /**
+   * Modifie un bonus déjà posé.
+   *
+   * Régler, et non empiler : sans cette route, changer le rayon d'un drone
+   * obligerait à en créer un second, et la partie en compterait deux.
+   */
+  async updateDefinition(
+    auth: AuthenticatedUser,
+    gameId: string,
+    definitionId: string,
+    dto: Partial<CreatePerkDto>,
+  ): Promise<PerkDefinition> {
+    const membership = await this.gamesService.findActiveMembership(
+      auth,
+      gameId,
+    );
+    await this.permissions.assert(membership, PERMISSIONS.GAME_MANAGE);
+
+    const [def] = await this.db
+      .select()
+      .from(perkDefinitions)
+      .where(
+        and(
+          eq(perkDefinitions.id, definitionId),
+          eq(perkDefinitions.gameId, gameId),
+        ),
+      );
+    if (!def) throw new NotFoundException('Bonus introuvable');
+
+    const [row] = await this.db
+      .update(perkDefinitions)
+      .set({
+        ...(dto.radiusMeters != null ? { radiusMeters: dto.radiusMeters } : {}),
+        ...(dto.durationSeconds != null
+          ? { durationSeconds: dto.durationSeconds }
+          : {}),
+        ...(dto.cooldownSeconds != null
+          ? { cooldownSeconds: dto.cooldownSeconds }
+          : {}),
+        ...(dto.stockPerTeam !== undefined
+          ? { stockPerTeam: dto.stockPerTeam }
+          : {}),
+        ...(dto.allowedRoles != null ? { allowedRoles: dto.allowedRoles } : {}),
+        ...(dto.orbit != null ? { orbit: dto.orbit } : {}),
+        ...(dto.sweepSeconds != null ? { sweepSeconds: dto.sweepSeconds } : {}),
+        ...(dto.concealment != null ? { concealment: dto.concealment } : {}),
+        ...(dto.concealedCovers != null
+          ? { concealedCovers: dto.concealedCovers }
+          : {}),
+      })
+      .where(eq(perkDefinitions.id, definitionId))
+      .returning();
+    return row;
+  }
+
+  /**
+   * Retire un bonus de la partie : il cesse d'exister pour les joueurs.
+   *
+   * Les activations passées restent en base — elles racontent ce qui s'est
+   * produit, et l'effacer fausserait le bilan.
+   */
+  async removeDefinition(
+    auth: AuthenticatedUser,
+    gameId: string,
+    definitionId: string,
+  ): Promise<void> {
+    const membership = await this.gamesService.findActiveMembership(
+      auth,
+      gameId,
+    );
+    await this.permissions.assert(membership, PERMISSIONS.GAME_MANAGE);
+
+    const [encoreActif] = await this.db
+      .select({ id: perkInstances.id })
+      .from(perkInstances)
+      .where(
+        and(
+          eq(perkInstances.definitionId, definitionId),
+          gt(perkInstances.endsAt, new Date()),
+        ),
+      )
+      .limit(1);
+    if (encoreActif) {
+      throw new BadRequestException(
+        'Ce bonus est en cours d’utilisation : attendez la fin du survol',
+      );
+    }
+
+    await this.db
+      .delete(perkDefinitions)
+      .where(
+        and(
+          eq(perkDefinitions.id, definitionId),
+          eq(perkDefinitions.gameId, gameId),
+        ),
+      );
+  }
+
+  /**
+   * Relance la révélation à intervalle régulier, le temps du survol.
+   *
+   * Un drone qui tourne repasse : chaque passage refait le tirage sous
+   * couvert, et c'est de là que vient l'intermittence. Sans ces passages,
+   * il n'y aurait qu'un instant, donc rien d'intermittent.
+   *
+   * Tenu en mémoire et non en base, à dessein : un redémarrage du serveur
+   * interrompt les balayages, et c'est sans conséquence — le client efface
+   * de toute façon les contacts à `endsAt`.
+   */
+  private planifierBalayages(
+    gameId: string,
+    teamId: string,
+    instanceId: string,
+    endsAt: Date,
+    lat: number,
+    lng: number,
+    def: PerkDefinition,
+  ): void {
+    const timer = setInterval(() => {
+      if (Date.now() >= endsAt.getTime()) {
+        clearInterval(timer);
+        return;
+      }
+      void this.revealHostiles(
+        gameId,
+        teamId,
+        lat,
+        lng,
+        def.radiusMeters,
+        def,
+      )
+        .then((contacts) => {
+          this.events.emit(PERK_REVEAL_EVENT, {
+            gameId,
+            teamId,
+            instanceId,
+            endsAt,
+            contacts,
+          } satisfies PerkRevealPayload);
+        })
+        .catch(() => {
+          // Un balayage raté n'interrompt pas le survol : le suivant
+          // retentera.
+        });
+    }, def.sweepSeconds * 1000);
+    // Ne retient pas le processus à l'arrêt.
+    timer.unref?.();
+  }
+
+  /**
+   * Une chance sur trois d'être vu à un balayage donné, sous couvert.
+   *
+   * Assez pour qu'on finisse par savoir qu'il y a quelqu'un, trop peu pour
+   * suivre un déplacement : c'est exactement ce qu'un couvert doit faire.
+   */
+  private static readonly CHANCE_SOUS_COUVERT = 0.35;
 
   /**
    * Brouilleur : coupe les drones adverses encore actifs dont la zone

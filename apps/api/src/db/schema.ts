@@ -538,6 +538,47 @@ export const perkDefinitions = pgTable('perk_definitions', {
   /** Stock par équipe ; null = illimité. */
   stockPerTeam: integer('stock_per_team'),
   allowedRoles: text('allowed_roles').array().notNull().default([]),
+
+  /**
+   * Le drone tourne-t-il autour du point visé, plutôt que d'y rester fixe ?
+   * Purement visuel côté joueur, mais c'est ce qui rend lisible la zone
+   * qu'il couvre.
+   */
+  orbit: boolean('orbit').notNull().default(true),
+
+  /**
+   * Intervalle entre deux balayages, en secondes. 0 = un seul instantané
+   * à l'activation.
+   *
+   * C'est ce qui donne son sens à l'intermittence : sans balayages
+   * répétés, « apparaître par intermittence » n'aurait aucun support —
+   * il n'y aurait qu'un seul instant.
+   */
+  sweepSeconds: integer('sweep_seconds').notNull().default(0),
+
+  /**
+   * Ce que le couvert fait aux hostiles qui s'y trouvent.
+   *
+   * `none` : le drone voit tout. `intermittent` : on n'apparaît qu'à
+   * certains balayages — on sait qu'il y a quelqu'un, jamais exactement
+   * où ni combien. `hidden` : invisible tant qu'on y reste.
+   */
+  concealment: text('concealment', {
+    enum: ['none', 'intermittent', 'hidden'],
+  })
+    .notNull()
+    .default('none'),
+
+  /**
+   * Quels couverts dissimulent : `forest`, `urban`, ou les deux.
+   *
+   * Le serveur n'a aucune donnée d'occupation du sol — et n'en veut pas.
+   * Ce sont les ZONES DESSINÉES par l'organisateur qui portent
+   * l'information, dans `properties.cover` : lui seul sait ce qui, sur
+   * SON terrain, cache vraiment un homme.
+   */
+  concealedCovers: text('concealed_covers').array().notNull().default([]),
+
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
