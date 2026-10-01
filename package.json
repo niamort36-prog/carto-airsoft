@@ -14,7 +14,8 @@
     "api:test": "npm run test --workspace apps/api",
     "console:dev": "npm run dev --workspace apps/console",
     "webapp:dev": "cd apps/mobile && flutter run -d web-server --web-port=5174 --web-hostname=127.0.0.1",
-    "webapp:build": "cd apps/mobile && flutter build web --release"
+    "webapp:build": "cd apps/mobile && flutter build web --release",
+    "console:publish": "node scripts/publish-console.mjs"
   },
   "engines": {
     "node": ">=22"

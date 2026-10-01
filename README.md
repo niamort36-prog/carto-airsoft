@@ -74,8 +74,18 @@ node apps/api/e2e/demo-setup.mjs "Op Fontainebleau"
 
 ## Essayer sans rien installer
 
-L'application navigateur est publiée à chaque poussée :
-**https://niamort36-prog.github.io/carto-airsoft/**
+Trois adresses, toutes publiées depuis ce dépôt :
+
+| | Adresse |
+|---|---|
+| L'application (copie du terrain) | https://niamort36-prog.github.io/carto-airsoft/ |
+| La console, à côté d'elle | https://niamort36-prog.github.io/carto-airsoft/console/ |
+| La console, sur son propre dépôt | https://niamort36-prog.github.io/carto-airsoft-console/ |
+
+Les deux premières se republient seules à chaque poussée. La troisième se
+republie par `npm run console:publish` : son dépôt ne contient que le site
+construit, jamais de source — une copie du résultat ne diverge pas, une
+copie de la source si.
 
 ⚠️ Le site est en HTTPS et ne peut donc pas appeler une API en HTTP. Pour
 qu'il serve à autre chose qu'à regarder l'écran de connexion, exposer
