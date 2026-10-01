@@ -3,6 +3,8 @@ import type { Session } from '@supabase/supabase-js';
 
 import {
   api,
+  API,
+  definirUrlServeur,
   isMixedContent,
   MIXED_CONTENT_HINT,
   ROLE_LABELS,
@@ -168,10 +170,29 @@ function Console() {
             Mes parties
           </button>
         </nav>
+        <button
+          title={`Serveur : ${API}`}
+          onClick={() => {
+            const saisie = prompt(
+              'Adresse du serveur.\n\n' +
+                'Collez ici l’adresse HTTPS de votre tunnel — la console la ' +
+                'retient et n’a pas besoin d’être reconstruite.',
+              API,
+            );
+            if (saisie != null) definirUrlServeur(saisie);
+          }}
+        >
+          Serveur
+        </button>
         <button onClick={() => supabase.auth.signOut()}>Quitter</button>
       </header>
 
-      {isMixedContent && <div className="error">{MIXED_CONTENT_HINT}</div>}
+      {isMixedContent && (
+        <div className="error">
+          {MIXED_CONTENT_HINT} Le bouton « Serveur », en haut, l’enregistre
+          sans rien reconstruire.
+        </div>
+      )}
       {error && <div className="error">{error}</div>}
 
       {section === 'cartes' ? (

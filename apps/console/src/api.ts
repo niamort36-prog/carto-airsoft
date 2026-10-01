@@ -18,7 +18,56 @@ const SUPABASE_ANON_KEY =
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-const API = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/v1';
+const CLE_SERVEUR = 'carto.apiBaseUrl';
+
+/**
+ * Adresse de l'API, réglable dans la console sans recompiler.
+ *
+ * Sans cela, changer de serveur — passer d'un tunnel HTTPS à un autre —
+ * obligerait à reconstruire et republier le site. L'application mobile
+ * offre déjà ce réglage ; la console n'avait aucune raison d'être plus
+ * rigide.
+ */
+function lireUrlServeur(): string {
+  try {
+    const saisie = localStorage.getItem(CLE_SERVEUR);
+    if (saisie) return saisie;
+  } catch {
+    // Navigation privée, stockage bloqué : on retombe sur l'adresse
+    // compilée plutôt que d'empêcher la console de démarrer.
+  }
+  return import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000/v1';
+}
+
+/**
+ * Met une saisie humaine en forme d'URL d'API. On tape
+ * « monserveur.trycloudflare.com », pas
+ * « https://monserveur.trycloudflare.com/v1 » — refuser l'une des deux
+ * formes serait un piège, pas une vérification.
+ */
+export function normaliserUrlServeur(saisie: string): string | null {
+  let texte = saisie.trim();
+  if (!texte) return null;
+  if (!texte.includes('://')) texte = `https://${texte}`;
+  while (texte.endsWith('/')) texte = texte.slice(0, -1);
+  if (!texte.endsWith('/v1')) texte = `${texte}/v1`;
+  return texte;
+}
+
+export function definirUrlServeur(saisie: string): void {
+  const url = normaliserUrlServeur(saisie);
+  try {
+    if (url) localStorage.setItem(CLE_SERVEUR, url);
+    else localStorage.removeItem(CLE_SERVEUR);
+  } catch {
+    // Sans stockage, le réglage vaudra au moins pour cette page.
+  }
+  // Rechargement : les appels déjà partis visent l'ancienne adresse, et
+  // un état à moitié d'un serveur, à moitié d'un autre, ne veut rien dire.
+  location.reload();
+}
+
+export const API = lireUrlServeur();
 
 /**
  * Vrai quand la page est servie en HTTPS mais vise une API en HTTP clair.
@@ -32,8 +81,7 @@ export const isMixedContent =
 
 export const MIXED_CONTENT_HINT =
   'Cette page est servie en HTTPS et ne peut pas appeler un serveur en ' +
-  'HTTP. Exposez l’API en HTTPS (cloudflared tunnel --url ' +
-  'http://localhost:3000) et reconstruisez le site avec VITE_API_BASE_URL.';
+  'HTTP. Exposez l’API derrière une adresse HTTPS, puis collez-la ici.';
 
 export class ApiError extends Error {
   constructor(
