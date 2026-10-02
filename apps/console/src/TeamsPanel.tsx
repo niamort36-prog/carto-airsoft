@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { api, ROLE_LABELS, type Member, type TeamEntry } from './api';
+import { demanderNom } from './prompt';
 
 /**
  * Onglet « Équipes » : les factions et leurs couleurs.
@@ -55,10 +56,11 @@ export function TeamsPanel({
   }
 
   async function ajouterEscouade(teamId: string) {
-    const n = prompt('Nom de l’escouade', 'Alpha');
-    if (n == null || !n.trim()) return;
+    const n = demanderNom('Nom de l’escouade', 'Alpha');
+    if (n == null) return;
+    setError(null);
     try {
-      await api.createSquad(gameId, teamId, n.trim());
+      await api.createSquad(gameId, teamId, n);
       onChange();
     } catch (e) {
       setError((e as Error).message);
@@ -159,11 +161,19 @@ export function TeamsPanel({
                   const estUnite = teams.some((t) =>
                     t.squads.some((s) => s.id === valeur),
                   );
-                  await api.assign(gameId, m.membershipId, {
-                    teamId: estUnite ? null : valeur || null,
-                    squadId: estUnite ? valeur : null,
-                  });
-                  onChange();
+                  setError(null);
+                  try {
+                    await api.assign(gameId, m.membershipId, {
+                      teamId: estUnite ? null : valeur || null,
+                      squadId: estUnite ? valeur : null,
+                    });
+                    onChange();
+                  } catch (err) {
+                    // Sans ce filet, un refus du serveur — un grade qui ne
+                    // permet pas l'affectation — ne se voyait nulle part :
+                    // la liste revenait à l'état d'avant, sans un mot.
+                    setError((err as Error).message);
+                  }
                 }}
               >
                 <option value="">—</option>

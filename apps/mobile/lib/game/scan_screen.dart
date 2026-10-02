@@ -63,27 +63,33 @@ class _ScanScreenState extends State<ScanScreen> {
     final controller = TextEditingController();
     final token = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Saisir le lien'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Lien ou code d’invitation',
-            hintText: 'https://…/j/…',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Saisir le lien'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            // Le bouton suit la saisie : « Rejoindre » sur un champ vide
+            // refermait la fenêtre sans rien faire ni rien dire.
+            onChanged: (_) => setDialogState(() {}),
+            decoration: const InputDecoration(
+              labelText: 'Lien ou code d’invitation',
+              hintText: 'https://…/j/…',
+            ),
           ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              onPressed: controller.text.trim().isEmpty
+                  ? null
+                  : () => Navigator.pop(dialogContext, controller.text.trim()),
+              child: const Text('Rejoindre'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () =>
-                Navigator.pop(dialogContext, controller.text.trim()),
-            child: const Text('Rejoindre'),
-          ),
-        ],
       ),
     );
     if (token != null && token.isNotEmpty) await _submit(token);

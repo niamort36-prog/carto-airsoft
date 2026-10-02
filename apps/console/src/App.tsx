@@ -16,6 +16,7 @@ import {
 } from './api';
 import { Login } from './Login';
 import { MapEditor } from './MapEditor';
+import { demanderNom } from './prompt';
 import { MapPicker, MapsPanel } from './MapsPanel';
 import { gameStore } from './mapStore';
 import { Replay } from './Replay';
@@ -128,14 +129,14 @@ function Console() {
     ) {
       return;
     }
-    const nom = prompt('Nom de la partie', 'Op Fontainebleau');
-    if (nom == null || nom.trim().length < 3) return;
+    const nom = demanderNom('Nom de la partie', 'Op Fontainebleau', 3);
+    if (nom == null) return;
     setError(null);
     try {
-      await api.createGame(nom.trim());
+      await api.createGame(nom);
       const liste = await api.games();
       setGames(liste);
-      setSelected(liste.find((g) => g.game.name === nom.trim()) ?? null);
+      setSelected(liste.find((g) => g.game.name === nom) ?? null);
     } catch (e) {
       setError((e as Error).message);
     }

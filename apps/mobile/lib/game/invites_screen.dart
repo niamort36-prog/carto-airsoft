@@ -195,7 +195,14 @@ class _InvitesScreenState extends State<InvitesScreen> {
   /// le serveur n'en garde qu'une empreinte, il faudra en générer un autre.
   Future<void> _showQr(InviteView invite) async {
     final payload = invite.url ?? invite.token;
-    if (payload == null) return;
+    if (payload == null) {
+      // Rien à encoder : le code reste affichable, et c'est lui qui se
+      // relit plus tard. Se taire ici donnerait un bouton sans effet.
+      _showError(
+        'Invitation créée, mais sans QR : dictez le code ${invite.code}.',
+      );
+      return;
+    }
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(

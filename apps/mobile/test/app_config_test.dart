@@ -44,4 +44,30 @@ void main() {
       );
     });
   });
+  group('serveur deviné depuis l’adresse de la page', () {
+    // Servie par le PC de la partie sur le Wi-Fi, l'application vise ce PC.
+    // Viser `localhost` désignerait le téléphone, et obligeait chaque joueur
+    // à recopier l'adresse à la main avant de pouvoir se connecter.
+    bool local(String h) => AppConfig.estHoteReseauLocal(h);
+
+    test('les trois plages privées sont reconnues', () {
+      expect(local('192.168.1.63'), isTrue);
+      expect(local('10.0.0.7'), isTrue);
+      expect(local('172.16.0.1'), isTrue);
+      expect(local('172.31.255.254'), isTrue);
+    });
+
+    test('un site public n’est pas un réseau local', () {
+      expect(local('cardiologue.github.io'), isFalse);
+      expect(local('carto.exemple.fr'), isFalse);
+      expect(local('localhost'), isFalse);
+    });
+
+    test('les voisines de 172 hors plage ne passent pas', () {
+      // 172.15 et 172.32 sont publiques : les prendre pour du local ferait
+      // viser un serveur qui n'existe pas.
+      expect(local('172.15.0.1'), isFalse);
+      expect(local('172.32.0.1'), isFalse);
+    });
+  });
 }

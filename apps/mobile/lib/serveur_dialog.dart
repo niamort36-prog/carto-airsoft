@@ -8,9 +8,14 @@ import 'app_config.dart';
 /// changement d'adresse : il faudrait recompiler et redistribuer à tout le
 /// monde. Là, chacun corrige sur son téléphone.
 ///
-/// Renvoie `true` si l'adresse a changé — l'appelant peut alors relancer ce
-/// qu'il avait chargé.
-Future<bool> demanderUrlServeur(BuildContext context) async {
+/// Renvoie `null` si on a annulé, `true` si l'adresse a changé, `false` si
+/// elle a été réenregistrée telle quelle.
+///
+/// Les trois cas comptent, et les confondre faisait passer le bouton pour
+/// mort : réécrire la même adresse — le réflexe quand on retente après une
+/// panne — refermait la fenêtre sans un mot. Annuler est le seul cas où le
+/// silence est voulu.
+Future<bool?> demanderUrlServeur(BuildContext context) async {
   final avant = AppConfig.apiBaseUrl;
   final controller = TextEditingController(
     text: AppConfig.urlServeurPersonnalisee ? avant : '',
@@ -59,7 +64,7 @@ Future<bool> demanderUrlServeur(BuildContext context) async {
     ),
   );
 
-  if (saisie == null) return false;
+  if (saisie == null) return null; // Annulation : silence voulu.
   await AppConfig.definirUrlServeur(saisie);
   return AppConfig.apiBaseUrl != avant;
 }

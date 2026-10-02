@@ -149,11 +149,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _loading
                         ? null
                         : () async {
-                            if (await demanderUrlServeur(context) && mounted) {
-                              _showMessage(
-                                'Serveur : ${AppConfig.apiBaseUrl}',
-                              );
-                            }
+                            final change = await demanderUrlServeur(context);
+                            if (change == null || !mounted) return;
+                            _showMessage('Serveur : ${AppConfig.apiBaseUrl}');
                           },
                   ),
                 ],

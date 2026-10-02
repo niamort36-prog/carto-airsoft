@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, BASEMAPS, type PreparedMap } from './api';
 import { MapEditor } from './MapEditor';
 import { preparedMapStore } from './mapStore';
+import { demanderNom } from './prompt';
 
 /**
  * Onglet « Cartes » : la bibliothèque de terrains.
@@ -31,11 +32,11 @@ export function MapsPanel() {
   }, []);
 
   async function creer() {
-    const nom = prompt('Nom de la carte', 'Nouveau terrain');
-    if (nom == null || !nom.trim()) return;
+    const nom = demanderNom('Nom de la carte', 'Nouveau terrain');
+    if (nom == null) return;
     setError(null);
     try {
-      const carte = await api.createMap(nom.trim(), 'ortho_ign');
+      const carte = await api.createMap(nom, 'ortho_ign');
       await recharger();
       setOuverte(carte);
     } catch (e) {

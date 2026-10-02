@@ -1,7 +1,7 @@
 import 'package:socket_io_client/socket_io_client.dart' as sio;
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../app_config.dart';
+import '../session.dart';
 import 'models.dart';
 
 /// Liaison temps réel avec l'arbitre (§7.3).
@@ -42,8 +42,7 @@ class GameRealtime {
 
   void connect() {
     final base = AppConfig.apiBaseUrl.replaceFirst(RegExp(r'/v1/?$'), '');
-    final token =
-        Supabase.instance.client.auth.currentSession?.accessToken ?? '';
+    final token = Session.jeton;
     final socket = sio.io(
       '$base/game',
       sio.OptionBuilder()

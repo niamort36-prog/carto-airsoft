@@ -76,6 +76,21 @@ class AppConfig {
     return texte;
   }
 
+  /// Vrai quand l'hôte est une adresse de réseau local (RFC 1918).
+  ///
+  /// Publique pour être testable : c'est elle qui décide si l'application
+  /// devine le serveur toute seule.
+  ///
+  /// C'est la signature d'une page servie par le PC de la partie à des
+  /// téléphones du même Wi-Fi — par opposition à un site public.
+  static bool estHoteReseauLocal(String hote) {
+    if (hote.startsWith('192.168.') || hote.startsWith('10.')) return true;
+    final m = RegExp(r'^172\.(\d{1,2})\.').firstMatch(hote);
+    if (m == null) return false;
+    final second = int.parse(m.group(1)!);
+    return second >= 16 && second <= 31;
+  }
+
   /// URL effective. Chaque cible joint le PC de développement par une
   /// adresse différente : l'émulateur Android passe par 10.0.2.2, le
   /// simulateur iOS et le navigateur partagent le réseau de la machine et
@@ -87,6 +102,13 @@ class AppConfig {
     if (_configuredApiBaseUrl.isNotEmpty) return _configuredApiBaseUrl;
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
       return 'http://10.0.2.2:3000/v1';
+    }
+    if (kIsWeb && estHoteReseauLocal(Uri.base.host)) {
+      // La page vient du PC de la partie, par le Wi-Fi : le serveur est sur
+      // ce même PC. Viser `localhost` désignerait le téléphone lui-même,
+      // et obligeait chaque joueur à recopier l'adresse à la main. Un site
+      // public, lui, n'a pas d'adresse privée : il n'est pas concerné.
+      return 'http://${Uri.base.host}:3000/v1';
     }
     return 'http://localhost:3000/v1';
   }
@@ -111,4 +133,21 @@ class AppConfig {
       'du serveur ».';
 
   static bool get isAuthConfigured => supabaseAnonKey.isNotEmpty;
+
+  /// Jeton forgé localement, pour une construction de développement.
+  ///
+  /// `flutter build web --dart-define=JETON_DEV=$(node scripts/jeton-dev.mjs)`
+  /// — voir [Session]. Vide par défaut : une construction ordinaire passe
+  /// par la connexion.
+  static const jetonDev = String.fromEnvironment('JETON_DEV');
+
+  /// Ouvre directement la carte libre, sans passer par la connexion.
+  ///
+  /// Réservé au développement : `flutter build web
+  /// --dart-define=CARTE_LIBRE=true`. Éteint par défaut, et sans effet sur
+  /// l'arbitrage — cette carte ne parle à aucune partie, et le serveur
+  /// continue de refuser tout appel sans jeton (§2.1). Elle sert à regarder
+  /// le rendu cartographique dans un navigateur sans compte.
+  static const carteLibreDirecte =
+      bool.fromEnvironment('CARTE_LIBRE', defaultValue: false);
 }

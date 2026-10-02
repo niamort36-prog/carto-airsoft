@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app_config.dart';
 import 'auth/login_screen.dart';
 import 'game/games_screen.dart';
+import 'map/map_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -44,9 +45,15 @@ class CartoAirsoftApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: AppConfig.isAuthConfigured
-          ? const AuthGate()
-          : const ConfigMissingScreen(),
+      home: AppConfig.carteLibreDirecte
+          // Constructions de développement : la carte seule, ou la pile
+          // entière avec un jeton forgé sur place (voir Session).
+          ? const MapScreen()
+          : AppConfig.jetonDev.isNotEmpty
+              ? const GamesScreen()
+              : AppConfig.isAuthConfigured
+                  ? const AuthGate()
+                  : const ConfigMissingScreen(),
     );
   }
 }

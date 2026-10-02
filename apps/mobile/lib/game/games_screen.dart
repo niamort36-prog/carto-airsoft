@@ -205,38 +205,55 @@ class _GamesScreenState extends State<GamesScreen> {
     final controller = TextEditingController();
     final code = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Code de la partie'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Les huit caractères annoncés par l’organisateur. Ni O ni I '
-              'ne s’y trouvent : ce sont des zéros et des uns.',
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          // Un code fait huit caractères ; le tiret et les espaces sont du
+          // confort de lecture, pas du code.
+          final saisi = controller.text
+              .replaceAll(RegExp(r'[^A-Za-z0-9]'), '')
+              .length;
+          return AlertDialog(
+            title: const Text('Code de la partie'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Les huit caractères annoncés par l’organisateur. Ni O '
+                  'ni I ne s’y trouvent : ce sont des zéros et des uns.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  // Le bouton suit la saisie : « Continuer » sur un champ
+                  // vide refermait la fenêtre sans rien faire ni rien dire.
+                  onChanged: (_) => setDialogState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'ABCD-EFGH',
+                    border: const OutlineInputBorder(),
+                    helperText: saisi == 0
+                        ? 'Huit caractères'
+                        : '$saisi caractère(s) sur 8',
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                hintText: 'ABCD-EFGH',
-                border: OutlineInputBorder(),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Annuler'),
               ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: const Text('Continuer'),
-          ),
-        ],
+              FilledButton(
+                onPressed: saisi < 8
+                    ? null
+                    : () => Navigator.pop(dialogContext, controller.text),
+                child: const Text('Continuer'),
+              ),
+            ],
+          );
+        },
       ),
     );
     if (code == null || code.trim().isEmpty || !mounted) return;
@@ -302,6 +319,14 @@ class _GamesScreenState extends State<GamesScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  /// Une confirmation neutre : ce qui vient de se passer, sans alarme.
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   void _showError(Object e) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -344,11 +369,10 @@ class _GamesScreenState extends State<GamesScreen> {
             tooltip: 'Adresse du serveur',
             icon: const Icon(Icons.dns_outlined),
             onPressed: () async {
-              if (await demanderUrlServeur(context) && mounted) {
-                setState(() {
-                  _games = _load();
-                });
-              }
+              final change = await demanderUrlServeur(context);
+              if (change == null || !mounted) return;
+              _showMessage('Serveur : ${AppConfig.apiBaseUrl}');
+              if (change) setState(() => _games = _load());
             },
           ),
           IconButton(
@@ -398,9 +422,16 @@ class _GamesScreenState extends State<GamesScreen> {
                             ),
                             TextButton(
                               onPressed: () async {
-                                if (await demanderUrlServeur(context)) {
-                                  _reload();
-                                }
+                                // Ici on recharge même si l'adresse n'a pas
+                                // bougé : on arrive sur ce bouton pour
+                                // retenter, pas pour régler.
+                                final change =
+                                    await demanderUrlServeur(context);
+                                if (change == null || !mounted) return;
+                                _showMessage(
+                                  'Serveur : ${AppConfig.apiBaseUrl}',
+                                );
+                                _reload();
                               },
                               child: const Text('Adresse du serveur'),
                             ),

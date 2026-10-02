@@ -799,7 +799,13 @@ class _MapScreenState extends State<MapScreen> {
                           ),
                           myMembershipId: _myMembershipId,
                           onTapMember: (m) {
-                            if (m.lat == null) return;
+                            if (m.lat == null) {
+                              _showSnack(
+                                '${m.displayName} : aucune position connue '
+                                'pour l’instant',
+                              );
+                              return;
+                            }
                             Navigator.pop(sheetContext);
                             _controller?.animateCamera(
                               CameraUpdate.newLatLngZoom(
@@ -1226,7 +1232,12 @@ class _MapScreenState extends State<MapScreen> {
   /// qui permet de proposer un QR qui place l'ami à côté de soi.
   void _openInvites() {
     final me = _myMembershipId != null ? _members[_myMembershipId] : null;
-    if (me == null) return;
+    if (me == null) {
+      // Ma propre fiche n'est pas encore arrivée : le grade à proposer en
+      // dépend. Le dire, plutôt qu'un bouton sans effet.
+      _showSnack('Partie encore en cours de chargement — réessayez');
+      return;
+    }
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => InvitesScreen(
@@ -1363,6 +1374,7 @@ class _MapScreenState extends State<MapScreen> {
       'Nom du camp',
       _couleursCamp[couleur] ?? 'Bleu',
       initial: _couleursCamp[couleur],
+      minLength: 1,
     );
     if (nom == null || nom.trim().isEmpty || !mounted) return;
 
@@ -1487,6 +1499,7 @@ class _MapScreenState extends State<MapScreen> {
     final nom = await _askText(
       parent == null ? 'Nom de l’unité' : 'Sous-unité de ${parent.name}',
       'Alpha',
+      minLength: 1,
     );
     if (nom == null || nom.trim().isEmpty || !mounted) return;
 
@@ -1512,7 +1525,10 @@ class _MapScreenState extends State<MapScreen> {
   /// Actions sur une unité de l'organigramme.
   void _showUnitSheet(CommandNode noeud) {
     final unite = _squads.where((s) => s.id == noeud.squadId).firstOrNull;
-    if (unite == null) return;
+    if (unite == null) {
+      _showSnack('Cette unité n’existe plus — rouvrez l’organigramme');
+      return;
+    }
     final echelon = SymbolEchelon.fromWire(unite.echelon);
 
     showModalBottomSheet<void>(
@@ -1576,6 +1592,7 @@ class _MapScreenState extends State<MapScreen> {
                   'Alpha',
                   initial: unite.name,
                   confirm: 'Renommer',
+                  minLength: 1,
                 );
                 if (nom == null || nom.trim().isEmpty) return;
                 await _majUnite(unite, name: nom.trim());
@@ -1813,7 +1830,11 @@ class _MapScreenState extends State<MapScreen> {
 
     var squadId = choix;
     if (choix == 'new') {
-      final nom = await _askText('Nom de l’escouade', 'Alpha');
+      final nom = await _askText(
+        'Nom de l’escouade',
+        'Alpha',
+        minLength: 1,
+      );
       if (nom == null || nom.trim().isEmpty) return;
       final squad =
           await GamesApi.createSquad(widget.gameId!, teamId, nom.trim());
@@ -1847,6 +1868,13 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
+  /// Saisie d'une ligne de texte.
+  ///
+  /// `minLength` sépare deux usages qui se ressemblent : un NOM vide n'a pas
+  /// de sens et son bouton doit donc rester éteint — sinon valider referme
+  /// la fenêtre sans rien faire ni rien dire, et le geste passe pour une
+  /// panne. Une ÉTIQUETTE vide, elle, veut dire « efface-la » : on la laisse
+  /// passer.
   Future<String?> _askText(
     String title,
     String hint, {
@@ -1854,28 +1882,40 @@ class _MapScreenState extends State<MapScreen> {
     String confirm = 'Créer',
     String? helper,
     int? maxLength,
+    int minLength = 0,
   }) {
     final controller = TextEditingController(text: initial);
     return showDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: maxLength,
-          decoration: InputDecoration(hintText: hint, helperText: helper),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Annuler'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
-            child: Text(confirm),
-          ),
-        ],
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          final assez = controller.text.trim().length >= minLength;
+          return AlertDialog(
+            title: Text(title),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              maxLength: maxLength,
+              onChanged: minLength > 0 ? (_) => setDialogState(() {}) : null,
+              decoration: InputDecoration(
+                hintText: hint,
+                helperText: helper ?? (minLength > 0 ? 'Donnez un nom' : null),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: assez
+                    ? () => Navigator.pop(dialogContext, controller.text)
+                    : null,
+                child: Text(confirm),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

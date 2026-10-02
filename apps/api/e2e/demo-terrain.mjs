@@ -9,21 +9,33 @@
 // croit se trouver : la carte s'ouvre donc directement sur l'action.
 import { io } from 'socket.io-client';
 
+import { forgerJeton } from '../../../scripts/jeton-dev.mjs';
+
 const SUPABASE = 'https://rcgrwhayagadsaqnjufj.supabase.co';
 const KEY = 'sb_publishable_1tA1CkejeoRzHqvXqnLgwA_nZ3eadsb';
-const API = 'http://localhost:3000/v1';
+const API = process.env.API_URL ?? 'http://localhost:3000/v1';
+
+// Deux façons d'obtenir un jeton, selon l'API qu'on vise.
+//
+// Avec SUPABASE_JWT_SECRET, l'API vérifie des signatures HS256 : on forge
+// les jetons sur place, et la pile entière tourne sur un PC sans compte,
+// sans mot de passe et sans réseau. Sans ce secret, il faut de vrais
+// comptes sur le projet Supabase de test — et donc E2E_PASSWORD.
+const SECRET = process.env.SUPABASE_JWT_SECRET;
 const PASSWORD = process.env.E2E_PASSWORD;
-if (!PASSWORD) {
+if (!SECRET && !PASSWORD) {
   throw new Error(
-    'E2E_PASSWORD manquant. Ces scripts ouvrent de vrais comptes sur le ' +
-      'projet Supabase de test : le mot de passe ne vit pas dans le dépôt. ' +
-      'Voir README, section « Tests E2E ».',
+    'Ni SUPABASE_JWT_SECRET ni E2E_PASSWORD. Le premier fait tourner la ' +
+      'démo en local sans compte (voir scripts/jeton-dev.mjs) ; le second ' +
+      'ouvre de vrais comptes sur le projet Supabase de test.',
   );
 }
 const CENTRE = { lat: 48.404, lng: 2.632 };
 const nom = process.argv[2] ?? 'Op Franchard';
 
 const login = async (email) => {
+  // Mode local : le jeton se forge ici même.
+  if (SECRET) return forgerJeton(email.split('@')[0]).jeton;
   const body = JSON.stringify({ email, password: PASSWORD });
   const h = { apikey: KEY, 'Content-Type': 'application/json' };
   let r = await fetch(`${SUPABASE}/auth/v1/token?grant_type=password`, {

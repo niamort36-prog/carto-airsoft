@@ -1,17 +1,15 @@
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../app_config.dart';
+import '../session.dart';
 import 'models.dart';
 
 /// Client REST de l'API arbitre (principe API-first §2.2 :
 /// l'app ne parle jamais directement à la base).
 class GamesApi {
   static Map<String, String> _headers() => {
-        'Authorization':
-            'Bearer ${Supabase.instance.client.auth.currentSession?.accessToken ?? ''}',
+        'Authorization': 'Bearer ${Session.jeton}',
         'Content-Type': 'application/json',
       };
 

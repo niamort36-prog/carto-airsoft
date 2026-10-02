@@ -380,8 +380,17 @@ export function MapEditor({
   }
 
   function terminer(kind: 'ligne' | 'zone') {
-    if (kind === 'ligne' && draft.length < 2) return;
-    if (kind === 'zone' && draft.length < 3) return;
+    // Dire pourquoi, plutôt que de ne rien faire : un « Valider » sans
+    // effet et sans message ressemble à un bouton cassé.
+    const minimum = kind === 'ligne' ? 2 : 3;
+    if (draft.length < minimum) {
+      setError(
+        `Il faut au moins ${minimum} points — cliquez sur la carte pour en ` +
+          `poser (${draft.length} pour l’instant).`,
+      );
+      return;
+    }
+    setError(null);
     const geometry: GeoJSON.Geometry =
       kind === 'ligne'
         ? { type: 'LineString', coordinates: draft }

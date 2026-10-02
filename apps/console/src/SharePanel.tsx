@@ -13,6 +13,38 @@ import { api, ROLE_LABELS, type Invite, type TeamEntry } from './api';
  * attribue le grade au scan.
  */
 
+/**
+ * Copie un texte, avec un repli.
+ *
+ * `navigator.clipboard` n'existe PAS hors contexte sécurisé : servie en
+ * `http://192.168.x.x`, la console n'y a pas droit. Le bouton ne faisait
+ * alors rien, sans un mot — ce qui ressemble exactement à une panne.
+ */
+async function copier(
+  texte: string,
+  signaler: (m: string) => void,
+): Promise<void> {
+  try {
+    if (navigator.clipboard) {
+      await navigator.clipboard.writeText(texte);
+      return;
+    }
+    // Repli universel : une zone de texte hors écran, sélectionnée puis
+    // copiée par la commande historique du navigateur.
+    const champ = document.createElement('textarea');
+    champ.value = texte;
+    champ.style.position = 'fixed';
+    champ.style.opacity = '0';
+    document.body.appendChild(champ);
+    champ.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(champ);
+    if (!ok) throw new Error('copie refusée');
+  } catch {
+    signaler(`Copie impossible — le code est : ${texte}`);
+  }
+}
+
 /** Formats d'impression, et ce qu'on peut y mettre. */
 const FORMATS = [
   { key: 'A3', label: 'A3', mm: [297, 420] as const },
@@ -153,7 +185,7 @@ export function SharePanel({
               </span>
             </span>
             <button
-              onClick={() => navigator.clipboard?.writeText(i.code)}
+              onClick={() => void copier(i.code, setError)}
               title="Copier le code"
             >
               Copier
@@ -162,8 +194,13 @@ export function SharePanel({
               <button
                 className="danger"
                 onClick={async () => {
-                  await api.revokeInvite(gameId, i.id);
-                  await recharger();
+                  setError(null);
+                  try {
+                    await api.revokeInvite(gameId, i.id);
+                    await recharger();
+                  } catch (e) {
+                    setError((e as Error).message);
+                  }
                 }}
               >
                 Révoquer
