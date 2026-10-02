@@ -1,0 +1,13 @@
+# Ce qui n'a rien à faire dans l'image, et qui la ferait gonfler ou
+# invaliderait son cache à chaque build.
+node_modules
+**/node_modules
+apps/mobile
+apps/console/dist
+apps/api/dist
+.git
+.github
+docs
+*.log
+.env
+**/.env

@@ -58,9 +58,10 @@ select {
 }
 
 .app {
-  display: grid;
-  grid-template-columns: 320px 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -78,7 +79,11 @@ select {
 .center {
   display: grid;
   place-items: center;
-  height: 100vh;
+  /* Tout ce qui reste, et non toute la fenêtre : sous l'en-tête, 100vh
+     déborderait. L'écran de connexion, lui, n'a pas d'en-tête — d'où le
+     minimum. */
+  flex: 1;
+  min-height: 100%;
   padding: 24px;
 }
 
@@ -145,7 +150,8 @@ h2 {
   border: 1px solid var(--danger);
   border-radius: 8px;
   padding: 10px 12px;
-  margin: 8px 0;
+  margin: 8px 12px;
+  flex: none;
 }
 
 .map {

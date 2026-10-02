@@ -14,7 +14,8 @@ void main() {
       // Une erreur qui décrit la panne sans donner la sortie laisse
       // chercher du côté du serveur, où rien n'est cassé.
       expect(AppConfig.mixedContentHint, contains('HTTPS'));
-      expect(AppConfig.mixedContentHint, contains('cloudflared'));
+      // La sortie, c'est le réglage — et non plus une commande de tunnel à
+      // taper : le serveur est désormais hébergé, pas exposé depuis un PC.
       expect(AppConfig.mixedContentHint, contains('Adresse du serveur'));
     });
   });

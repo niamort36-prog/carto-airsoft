@@ -1,0 +1,35 @@
+# Déploiement du serveur arbitre chez Render — variante sans ligne de
+# commande : Render lit ce fichier depuis le dépôt (« Blueprint »).
+#
+# ⚠️ L'offre gratuite de Render n'ouvre PAS les connexions permanentes et
+# met le service en veille après quinze minutes sans trafic, avec environ
+# une minute de réveil. L'application s'en accommode — son temps réel sait
+# retomber sur du long-polling — mais la première ouverture après une
+# longue pause sera lente, et une partie creuse peut voir sa liaison
+# coupée. Pour jouer sérieusement, prendre le plan payant ou Fly.io
+# (fly.toml). Voir docs/HEBERGEMENT.md.
+
+services:
+  - type: web
+    name: carto-airsoft-api
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    region: frankfurt
+    plan: free
+    healthCheckPath: /v1/health
+    # Les migrations tournent avant la bascule : une version déployée
+    # contre un schéma qu'elle ne connaît pas échouerait à la première
+    # requête.
+    preDeployCommand: npx drizzle-kit migrate
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Renseignées dans l'interface de Render, jamais ici : ce fichier
+      # part dans un dépôt public.
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false

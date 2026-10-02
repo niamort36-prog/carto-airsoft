@@ -100,21 +100,43 @@ async function request<T>(
   const {
     data: { session },
   } = await supabase.auth.getSession();
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API}${path}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch {
+    // `fetch` ne distingue pas un serveur éteint d'un blocage du
+    // navigateur : on dit l'adresse visée, qui est l'information utile.
+    throw new ApiError(
+      isMixedContent
+        ? MIXED_CONTENT_HINT
+        : `Serveur injoignable à ${API}. Vérifiez qu'il tourne, ou ` +
+          'corrigez l’adresse avec le bouton « Serveur ».',
+      0,
+    );
+  }
   if (!res.ok) {
-    let message = `Erreur ${res.status}`;
+    let message: string | null = null;
     try {
       const payload = (await res.json()) as { message?: string };
       if (payload.message) message = payload.message;
     } catch {
-      /* réponse sans corps JSON */
+      /* réponse sans corps JSON : ce n'est pas notre API qui a répondu */
+    }
+    if (message === null) {
+      // Un 404 en HTML vient d'un autre service — typiquement un tunnel
+      // refermé dont l'adresse est restée enregistrée ici. Dire « Erreur
+      // 404 » laisserait chercher du côté de la partie.
+      message =
+        `L’adresse ${API} ne mène pas au serveur de jeu ` +
+        `(réponse ${res.status}). Si c’était un tunnel, il est refermé : ` +
+        'corrigez l’adresse avec le bouton « Serveur ».';
     }
     throw new ApiError(message, res.status);
   }

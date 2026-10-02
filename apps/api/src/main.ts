@@ -8,7 +8,15 @@ async function bootstrap() {
 
   // API-first (§2.2) : toute la surface est versionnée et documentée dès la première route.
   app.setGlobalPrefix('v1');
-  app.enableCors();
+  // Une fois l'API publique, seules les pages du projet ont à l'appeler
+  // depuis un navigateur. Non renseigné — le cas du développement — on
+  // laisse tout passer, sans quoi chaque port local deviendrait un réglage.
+  const origines = process.env.CORS_ORIGINS?.split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+  app.enableCors(
+    origines?.length ? { origin: origines, credentials: true } : {},
+  );
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );

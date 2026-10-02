@@ -46,7 +46,12 @@ class GameRealtime {
     final socket = sio.io(
       '$base/game',
       sio.OptionBuilder()
-          .setTransports(['websocket'])
+          // D'abord le long-polling, puis montée en WebSocket si elle
+          // passe. Exiger le WebSocket d'emblée coupe le temps réel
+          // derrière un proxy d'entreprise, un réseau mobile filtrant ou
+          // un hébergeur qui ne l'ouvre pas — et ça ressemble alors à une
+          // partie où personne ne bouge.
+          .setTransports(['polling', 'websocket'])
           .setAuth({'token': token})
           .enableReconnection()
           .build(),

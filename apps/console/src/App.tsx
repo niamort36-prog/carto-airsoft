@@ -176,8 +176,9 @@ function Console() {
           onClick={() => {
             const saisie = prompt(
               'Adresse du serveur.\n\n' +
-                'Collez ici l’adresse HTTPS de votre tunnel — la console la ' +
-                'retient et n’a pas besoin d’être reconstruite.',
+                'Collez ici l’adresse HTTPS du serveur de jeu — la console ' +
+                'la retient et n’a pas besoin d’être reconstruite.\n' +
+                'Videz le champ pour revenir à l’adresse d’origine.',
               API,
             );
             if (saisie != null) definirUrlServeur(saisie);

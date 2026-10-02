@@ -127,10 +127,10 @@ class AppConfig {
 
   /// Ce qu'il faut faire, quand c'est ce piège-là.
   static const mixedContentHint =
-      'Cette page est servie en HTTPS et ne peut pas appeler un serveur en '
-      'HTTP. Exposez l’API en HTTPS (cloudflared tunnel --url '
-      'http://localhost:3000) puis collez l’adresse obtenue dans « Adresse '
-      'du serveur ».';
+      'Aucun serveur de jeu n’est configuré pour cette adresse. Une page '
+      'servie en HTTPS ne peut pas appeler un serveur en HTTP clair : le '
+      'navigateur bloque l’appel avant qu’il parte. Indiquez l’adresse '
+      'HTTPS de votre serveur dans « Adresse du serveur ».';
 
   static bool get isAuthConfigured => supabaseAnonKey.isNotEmpty;
 
