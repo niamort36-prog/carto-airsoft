@@ -35,19 +35,35 @@ class _GamesScreenState extends State<GamesScreen> {
   Future<List<GameSummary>> _load() async {
     try {
       final games = await GamesApi.myGames();
-      await LocalDb.instance.saveGames([
-        for (final g in games)
-          LocalGamesCompanion(
-            id: Value(g.id),
-            name: Value(g.name),
-            status: Value(g.status),
-            role: Value(g.role),
-          ),
-      ]);
+      // Le cache est un confort, pas une condition. L'écrire échouait
+      // silencieusement dans la même tentative que l'appel réseau : une
+      // réponse reçue passait alors pour une panne de serveur. Un
+      // navigateur en contexte non sécurisé (page en HTTP clair sur une
+      // adresse IP) refuse justement tout stockage.
+      try {
+        await LocalDb.instance.saveGames([
+          for (final g in games)
+            LocalGamesCompanion(
+              id: Value(g.id),
+              name: Value(g.name),
+              status: Value(g.status),
+              role: Value(g.role),
+            ),
+        ]);
+      } catch (_) {
+        // Sans cache, l'accueil ne survivra pas à une coupure — mais il
+        // fonctionne ici et maintenant.
+      }
       _fromCache = false;
       return games;
     } catch (_) {
-      final cached = await LocalDb.instance.cachedGames();
+      final List<LocalGame> cached;
+      try {
+        cached = await LocalDb.instance.cachedGames();
+      } catch (_) {
+        // Ni serveur ni stockage : c'est l'erreur du serveur qui informe.
+        rethrow;
+      }
       if (cached.isEmpty) rethrow;
       _fromCache = true;
       return [

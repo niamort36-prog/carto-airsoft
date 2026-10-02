@@ -89,7 +89,23 @@ class LocalGames extends Table {
   ],
 )
 class LocalDb extends _$LocalDb {
-  LocalDb() : super(driftDatabase(name: 'carto_airsoft'));
+  LocalDb() : super(_ouvrir());
+
+  /// Ouvre la base locale.
+  ///
+  /// Dans un navigateur, drift ne devine pas où trouver son moteur : sans
+  /// le paramètre `web`, l'ouverture lève « When compiling to the web, the
+  /// `web` parameter needs to be set » et l'écran de carte reste vide. Les
+  /// deux fichiers vivent dans `web/` et sont donc servis à côté de la
+  /// page ; les URL restent RELATIVES, sans quoi un site publié sous un
+  /// sous-chemin (GitHub Pages) les chercherait à la racine du domaine.
+  static QueryExecutor _ouvrir() => driftDatabase(
+        name: 'carto_airsoft',
+        web: DriftWebOptions(
+          sqlite3Wasm: Uri.parse('sqlite3.wasm'),
+          driftWorker: Uri.parse('drift_worker.js'),
+        ),
+      );
 
   static final LocalDb instance = LocalDb();
 

@@ -39,16 +39,24 @@ export function PermissionsPanel({ gameId }: { gameId: string }) {
     }
   }
 
-  if (catalogue.length === 0) return null;
+  // Le vide se dit. Renvoyer `null` ici faisait disparaître la matrice
+  // sans un mot dès que son chargement échouait — et l'erreur, rendue plus
+  // bas, ne s'affichait jamais. Il restait un titre suivi de rien.
+  if (catalogue.length === 0) {
+    return (
+      <>
+        {error ? (
+          <div className="error">{error}</div>
+        ) : (
+          <p className="muted">Chargement des permissions…</p>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
-      <h2>Permissions</h2>
       {error && <div className="error">{error}</div>}
-      <p className="muted">
-        Qui peut quoi dans cette partie. Le grade borne toujours la portée :
-        on n’agit jamais au-dessus de soi.
-      </p>
       <div className="list">
         {catalogue.map((perm) => (
           <div className="item" key={perm.key} style={{ display: 'block' }}>

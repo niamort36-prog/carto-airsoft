@@ -1,0 +1,84 @@
+# Le produit est un site et une webapp — rien d'autre.
+#
+# Android et iOS ont été retirés : le code Flutter reste, mais il n'est
+# plus construit que pour le navigateur, qui est désormais la seule cible.
+# Garder des constructions de plateformes qu'on ne publie pas coûterait du
+# temps à chaque poussée pour un résultat que personne n'installe.
+
+name: Webapp
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_VERSION: '3.44.7'
+
+jobs:
+  qualite:
+    name: Analyse et tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - name: Analyse statique
+        run: flutter analyze
+        working-directory: apps/mobile
+      - name: Tests
+        run: flutter test
+        working-directory: apps/mobile
+
+  # Android, iOS et web sortent du MEME code Dart : leurs fonctions ne
+  # peuvent pas diverger. Ce qui peut diverger, c'est la configuration de
+  # plateforme — et un numero de version fige a la main est la facon la plus
+  # discrete de livrer trois applications qui se croient differentes.
+  web:
+    name: Web
+    needs: qualite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: flutter pub get
+        working-directory: apps/mobile
+      - run: flutter build web --release
+        working-directory: apps/mobile
+      - name: Vérifier ce dont la version navigateur dépend
+        run: |
+          set -e
+          # La base locale exige ces deux fichiers : absents, l'application
+          # démarre puis échoue à la première écriture.
+          for f in sqlite3.wasm drift_worker.js; do
+            test -s "build/web/$f" || { echo "::error::$f manquant dans build/web"; exit 1; }
+          done
+          # Sans la bibliothèque de carte, l'écran principal reste vide.
+          grep -q 'maplibre-gl.js' build/web/index.html             || { echo "::error::maplibre-gl absent de index.html"; exit 1; }
+          echo "Dépendances du web présentes."
+        working-directory: apps/mobile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: carto-airsoft-web
+          path: apps/mobile/build/web
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - run: npm test --workspace apps/api

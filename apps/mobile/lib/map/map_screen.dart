@@ -24,6 +24,7 @@ import '../game/object_sync.dart';
 import '../game/perks_sheet.dart';
 import '../game/tracking_mode.dart';
 import '../offline/offline_sheet.dart';
+import '../platform/screen_wake.dart';
 import 'elevation.dart';
 import 'command_tree.dart';
 import 'command_tree_view.dart';
@@ -47,7 +48,8 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen>
+    with WidgetsBindingObserver {
   static const _markersSource = 'markers';
   static const _markersLayer = 'markers-icons';
   static const _drawingsSource = 'drawings';
@@ -230,10 +232,14 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadStyle();
     _requestLocation();
     _startStatusBar();
     if (_inGame) {
+      // L'écran reste allumé : un onglet verrouillé est suspendu, et le
+      // joueur disparaîtrait de la carte de son équipe en étant présent.
+      unawaited(_tenirEcranAllume());
       _syncService = ObjectSyncService(widget.gameId!);
       _realtime = GameRealtime(
         gameId: widget.gameId!,
@@ -390,8 +396,38 @@ class _MapScreenState extends State<MapScreen> {
     if (refresh) _refreshMarkers();
   }
 
+  /// Retour d'un passage en arrière-plan : le verrou a été relâché par le
+  /// navigateur, il faut le redemander, sinon il ne vaut que pour la
+  /// première minute de la partie.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _inGame && !ScreenWake.held) {
+      unawaited(_tenirEcranAllume());
+    }
+  }
+
+  /// Demande le verrou et le dit une fois s'il est refusé — taire un refus
+  /// laisserait croire à un suivi qui s'arrêtera à la première poche.
+  Future<void> _tenirEcranAllume() async {
+    if (!ScreenWake.supported) return;
+    final obtenu = await ScreenWake.acquire();
+    if (!obtenu && !_veilleSignalee && mounted) {
+      _veilleSignalee = true;
+      _showSnack(
+        'L’écran peut s’éteindre : votre position ne partira plus. '
+        'Gardez l’application à l’écran pendant la partie.',
+        isError: true,
+      );
+    }
+  }
+
+  /// Un refus se dit une fois, pas à chaque retour au premier plan.
+  bool _veilleSignalee = false;
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(ScreenWake.release());
     _heartbeat?.cancel();
     _contactsExpiry?.cancel();
     _droneTicker?.cancel();

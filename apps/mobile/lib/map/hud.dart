@@ -146,9 +146,9 @@ class WebLimitsBanner extends StatelessWidget {
           const SizedBox(width: 8),
           const Expanded(
             child: Text(
-              'Version navigateur : votre position n’est plus transmise dès '
-              'que l’onglet passe en arrière-plan ou que l’écran s’éteint. '
-              'Pour jouer, installez l’application.',
+              'Gardez cet écran allumé et au premier plan : un onglet mis '
+              'de côté ou un téléphone verrouillé cesse d’émettre votre '
+              'position, et vous disparaissez de la carte de votre équipe.',
               style: TextStyle(color: Colors.white, fontSize: 12),
             ),
           ),

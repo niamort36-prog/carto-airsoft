@@ -1,20 +1,21 @@
-# Version navigateur
+# La webapp
 
-Le même code Flutter que les applications Android et iOS, compilé pour le
-navigateur. `flutter build web` produit un site statique à déposer derrière
-n'importe quel hébergeur.
+Le code Flutter du projet, compilé pour le navigateur. `flutter build web`
+produit un site statique à déposer derrière n'importe quel hébergeur.
 
-## À quoi elle sert vraiment
+C'est désormais **la seule application** : les versions Android et iOS ont
+été abandonnées. Le code commun reste, mais plus rien n'est construit pour
+ces plateformes.
 
-Excellente pour :
+## Ce que cela coûte, et ce qu'on y fait
 
-* **regarder** — un organisateur sur son portable, un blessé sur le banc, un
-  spectateur qui suit la partie ;
-* **préparer et débriefer** — poser des marqueurs, lire le bilan ;
-* **dépanner** — quelqu'un arrive sans avoir installé l'application.
+Le choix du navigateur a un prix, payé à un seul endroit : le **suivi de
+position quand l'écran s'éteint**. Tout le reste — carte, symbologie,
+organigramme, dessin, temps réel, hors-ligne des objets — fonctionne
+identiquement.
 
-Mauvaise pour : **jouer**. Ce n'est pas une préférence, c'est une contrainte
-du navigateur, et elle est expliquée ci-dessous.
+Ce point est traité ci-dessous, et il n'est pas une fatalité complète :
+maintenir l'écran allumé pendant la partie suffit à garder le suivi actif.
 
 ## Ce qu'un navigateur ne sait pas faire
 
@@ -27,9 +28,15 @@ de son équipe**.
 
 C'est exactement ce que le §9 cherche à éviter, et c'est aussi pourquoi
 Android emploie un service de premier plan et iOS un mode d'arrière-plan :
-aucun équivalent n'existe côté web. Aucun réglage ne contourne cela.
+aucun équivalent n'existe côté web.
 
-Deux garde-fous ont été posés :
+**Ce qui marche quand même : empêcher l'écran de s'éteindre.** Un onglet
+dont l'écran reste allumé n'est pas suspendu. L'application demande donc ce
+verrou (`navigator.wakeLock`) en entrant en partie, et le reprend au retour
+d'un passage en arrière-plan. Ça consomme de la batterie — c'est le prix à
+payer, et il se paie aussi sur une application native qui suit une position.
+
+Deux garde-fous restent posés :
 
 * **Les alliés ne sont pas trompés.** La liaison temps réel tombe avec
   l'onglet : le joueur passe « hors ligne », son insigne s'estompe et sa
@@ -63,9 +70,15 @@ npm run console:dev    # :5173 — console de préparation (React)
 npm run webapp:dev     # :5174 — l'application elle-même (Flutter web)
 ```
 
-Le second est la **copie exacte de l'application** : même code, mêmes
-écrans, même compte. Le premier est un outil distinct, pensé pour un
-clavier et un grand écran.
+Les deux sont des produits distincts : la console est pensée pour un
+clavier et un grand écran, la webapp pour un téléphone sur le terrain.
+
+Pour tout servir sous **une seule adresse** — ce qui supprime le CORS, le
+contenu mixte et le réglage manuel du serveur :
+
+```bash
+npm run webapp          # webapp + API derrière la même origine
+```
 
 Sur ce port de développement, l'application vise `http://localhost:3000/v1`.
 Si l'API tourne ailleurs, nul besoin de recompiler — le bouton *Adresse du
@@ -73,7 +86,10 @@ serveur*, sur l'écran de connexion, l'enregistre dans le navigateur.
 
 ## En ligne
 
-L'application est publiée sur GitHub Pages à chaque poussée :
+Le serveur de jeu doit être hébergé lui aussi, sans quoi les sites publiés
+ne peuvent pas l'appeler — voir [HEBERGEMENT.md](HEBERGEMENT.md).
+
+La webapp est publiée sur GitHub Pages à chaque poussée :
 
 **https://niamort36-prog.github.io/carto-airsoft/**
 
